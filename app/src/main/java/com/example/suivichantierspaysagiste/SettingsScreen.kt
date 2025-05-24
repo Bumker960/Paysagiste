@@ -13,34 +13,35 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-// import com.example.suivichantierspaysagiste.ui.theme.ModernColors // Laissez cette ligne si ModernColors est bien là
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     settingsViewModel: SettingsViewModel,
-    navController: NavHostController // Gardé au cas où, même si non utilisé dans cet extrait
+    navController: NavHostController
 ) {
     val isDarkMode by settingsViewModel.isDarkModeEnabled.collectAsStateWithLifecycle()
 
-    // Collecter les états pour les seuils d'urgence depuis le SettingsViewModel
     val tonteSeuilVert by settingsViewModel.tonteSeuilVert.collectAsStateWithLifecycle()
     val tonteSeuilOrange by settingsViewModel.tonteSeuilOrange.collectAsStateWithLifecycle()
     val tailleSeuil1Vert by settingsViewModel.tailleSeuil1Vert.collectAsStateWithLifecycle()
     val tailleSeuil2Orange by settingsViewModel.tailleSeuil2Orange.collectAsStateWithLifecycle()
+    // NOUVEAU: Collecter l'état pour le seuil de désherbage
+    val desherbageSeuilOrangeJoursAvant by settingsViewModel.desherbageSeuilOrangeJoursAvant.collectAsStateWithLifecycle()
 
-    // États pour contrôler la visibilité des dialogues
+
     var showTontesDialog by remember { mutableStateOf(false) }
     var showTaillesDialog by remember { mutableStateOf(false) }
+    // NOUVEAU: État pour le dialogue de désherbage
+    var showDesherbageDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Réglages") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    // Modification temporaire pour résoudre l'erreur ModernColors
-                    containerColor = MaterialTheme.colorScheme.primaryContainer, // ANCIENNEMENT: ModernColors.barBackground
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer // ANCIENNEMENT: ModernColors.selectedContent
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
@@ -74,7 +75,7 @@ fun SettingsScreen(
             Divider()
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Seuils d'Urgence", style = MaterialTheme.typography.titleLarge) // Titre général pour les seuils
+            Text("Seuils d'Urgence", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(8.dp))
 
             // Ligne pour les seuils de Tontes
@@ -93,7 +94,13 @@ fun SettingsScreen(
             )
             Divider()
 
-            // Vous pourrez ajouter d'autres options de réglage ici plus tard
+            // NOUVEAU: Ligne pour les seuils de Désherbage
+            SettingSummaryRow(
+                title = "Seuil pour Désherbage Planifié",
+                summary = "Attention < ${desherbageSeuilOrangeJoursAvant} jours avant échéance",
+                onClick = { showDesherbageDialog = true }
+            )
+            Divider()
         }
     }
 
@@ -130,6 +137,20 @@ fun SettingsScreen(
             onDismissRequest = { showTaillesDialog = false }
         )
     }
+
+    // NOUVEAU: Dialogue pour le seuil de Désherbage
+    if (showDesherbageDialog) {
+        SingleUrgencyThresholdDialog(
+            title = "Modifier Seuil Désherbage",
+            initialValue = desherbageSeuilOrangeJoursAvant.toString(),
+            label = "Alerte 'Attention' (jours avant échéance) :",
+            helperText = "Nombre de jours avant la date planifiée pour passer en orange.",
+            onConfirm = { newValue ->
+                settingsViewModel.setDesherbageSeuilOrangeJoursAvant(newValue)
+            },
+            onDismissRequest = { showDesherbageDialog = false }
+        )
+    }
 }
 
 @Composable
@@ -153,7 +174,7 @@ fun SettingSummaryRow(
 }
 
 @Composable
-fun UrgencyThresholdsDialog(
+fun UrgencyThresholdsDialog( // Pour Tontes et Tailles (deux valeurs)
     title: String,
     initialSeuilVert: String,
     labelSeuilVert: String,
@@ -168,7 +189,6 @@ fun UrgencyThresholdsDialog(
     var tempSeuilOrange by remember(initialSeuilOrange) { mutableStateOf(initialSeuilOrange) }
     var errorSeuilVert by remember { mutableStateOf<String?>(null) }
     var errorSeuilOrange by remember { mutableStateOf<String?>(null) }
-
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -208,15 +228,15 @@ fun UrgencyThresholdsDialog(
                 val orangeInt = tempSeuilOrange.toIntOrNull()
                 var hasError = false
 
-                errorSeuilVert = null // Réinitialiser les messages d'erreur précédents
+                errorSeuilVert = null
                 errorSeuilOrange = null
 
-                if (vertInt == null) {
-                    errorSeuilVert = "Valeur numérique requise"
+                if (vertInt == null || vertInt <=0) {
+                    errorSeuilVert = "Valeur numérique positive requise"
                     hasError = true
                 }
-                if (orangeInt == null) {
-                    errorSeuilOrange = "Valeur numérique requise"
+                if (orangeInt == null || orangeInt <= 0) {
+                    errorSeuilOrange = "Valeur numérique positive requise"
                     hasError = true
                 }
 
@@ -243,6 +263,65 @@ fun UrgencyThresholdsDialog(
     )
 }
 
+// NOUVEAU Composable pour un dialogue avec une seule valeur de seuil (pour Désherbage)
+@Composable
+fun SingleUrgencyThresholdDialog(
+    title: String,
+    initialValue: String,
+    label: String,
+    helperText: String? = null,
+    onConfirm: (newValue: Int) -> Unit,
+    onDismissRequest: () -> Unit
+) {
+    var tempValue by remember(initialValue) { mutableStateOf(initialValue) }
+    var errorValue by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(title) },
+        text = {
+            Column {
+                ThresholdSettingItem(
+                    label = label,
+                    value = tempValue,
+                    onValueChange = {
+                        tempValue = it
+                        errorValue = null
+                    },
+                    helperText = helperText,
+                    isError = errorValue != null
+                )
+                errorValue?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val valueInt = tempValue.toIntOrNull()
+                var hasError = false
+                errorValue = null
+
+                if (valueInt == null || valueInt < 0) { // 0 est permis pour "le jour même"
+                    errorValue = "Valeur numérique positive ou nulle requise"
+                    hasError = true
+                }
+
+                if (!hasError && valueInt != null) {
+                    onConfirm(valueInt)
+                    onDismissRequest()
+                }
+            }) {
+                Text("Confirmer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+
 @Composable
 fun ThresholdSettingItem(
     label: String,
@@ -256,7 +335,8 @@ fun ThresholdSettingItem(
         OutlinedTextField(
             value = value,
             onValueChange = {
-                if (it.all { char -> char.isDigit() }) {
+                // Permet seulement les chiffres, mais la validation toIntOrNull gère les cas non numériques
+                if (it.all { char -> char.isDigit() } || it.isEmpty()) {
                     onValueChange(it)
                 }
             },
@@ -264,10 +344,14 @@ fun ThresholdSettingItem(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge,
-            isError = isError
+            isError = isError,
+            supportingText = {
+                if (isError) {
+                    // Le message d'erreur est affiché à l'extérieur par le dialogue parent
+                } else if (helperText != null) {
+                    Text(helperText)
+                }
+            }
         )
-        if (!isError && helperText != null) {
-            Text(helperText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
-        }
     }
 }

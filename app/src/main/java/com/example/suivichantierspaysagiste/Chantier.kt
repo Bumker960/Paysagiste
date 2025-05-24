@@ -10,6 +10,6 @@ data class Chantier(
     var nomClient: String,
     var adresse: String? = null, // L'adresse est optionnelle
     var serviceTonteActive: Boolean = true,
-    var serviceTailleActive: Boolean = true
+    var serviceTailleActive: Boolean = true,
+    var serviceDesherbageActive: Boolean = true // NOUVEAU: Service de désherbage
 )
-// Si vous voulez garder le commentaire, mettez-le sur une nouvelle ligne ou avant la parenthèse.

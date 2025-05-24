@@ -1,6 +1,6 @@
 package com.example.suivichantierspaysagiste
 
-import android.app.Application // Assurez-vous que cet import est là
+import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,8 +8,9 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Grass
-import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Grass // Tonte
+import androidx.compose.material.icons.filled.ContentCut // Taille
+import androidx.compose.material.icons.filled.Spa // Icône pour Désherbage (alternative: Eco, Nature, Yard)
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -42,6 +43,7 @@ sealed class BottomNavItem(val route: String, val label: String, val icon: Image
     object Chantiers : BottomNavItem(ScreenDestinations.CHANTIER_LIST_ROUTE, "Chantiers", Icons.Filled.List)
     object TontesPrio : BottomNavItem(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE, "Tontes Prio.", Icons.Filled.Grass)
     object TaillesPrio : BottomNavItem(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE, "Tailles Prio.", Icons.Filled.ContentCut)
+    object DesherbagesPrio : BottomNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage", Icons.Filled.Spa) // NOUVEL ITEM
     object Reglages : BottomNavItem(ScreenDestinations.SETTINGS_ROUTE, "Réglages", Icons.Filled.Settings)
 }
 
@@ -86,9 +88,8 @@ private val LightColorScheme = lightColorScheme(
 class MainActivity : ComponentActivity() {
 
     private val chantierViewModel: ChantierViewModel by viewModels {
-        // MODIFICATION ICI pour passer 'application' à la factory
         ChantierViewModelFactory(
-            application, // Passer l'instance de l'application
+            application,
             (application as MonApplicationChantiers).chantierRepository
         )
     }
@@ -132,6 +133,7 @@ fun AppNavigation(
         BottomNavItem.Chantiers,
         BottomNavItem.TontesPrio,
         BottomNavItem.TaillesPrio,
+        BottomNavItem.DesherbagesPrio, // NOUVEL ITEM AJOUTÉ À LA LISTE
         BottomNavItem.Reglages
     )
 
@@ -149,15 +151,18 @@ fun AppNavigation(
                         label = { Text(screen.label) },
                         selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                         onClick = {
-                            if (screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE) {
-                                chantierViewModel.onSearchQueryChanged("")
-                            }
-                            navController.navigate(screen.route) {
-                                popUpTo(screen.route) {
-                                    inclusive = true
-                                    saveState = false
+                            if (currentDestination?.route != screen.route) { // Évite de naviguer vers la même destination
+                                if (screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE) {
+                                    chantierViewModel.onSearchQueryChanged("") // Réinitialise la recherche en allant à la liste des chantiers
+                                    chantierViewModel.clearSelectedChantierId() // Efface l'ID du chantier sélectionné
                                 }
-                                launchSingleTop = true
+                                navController.navigate(screen.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { // Pop jusqu'au début du graph pour éviter une pile énorme
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true // Évite de multiples copies de la même destination
+                                    restoreState = true // Restaure l'état si on revient à une destination déjà visitée
+                                }
                             }
                         },
                         colors = NavigationBarItemDefaults.colors(
@@ -165,7 +170,7 @@ fun AppNavigation(
                             selectedTextColor = ModernColors.selectedContent,
                             unselectedIconColor = ModernColors.unselectedContent,
                             unselectedTextColor = ModernColors.unselectedContent,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) // Couleur de l'indicateur de sélection
                         )
                     )
                 }
@@ -186,13 +191,14 @@ fun AppNavigation(
             ) { backStackEntry ->
                 val chantierId = backStackEntry.arguments?.getLong(ScreenDestinations.CHANTIER_ID_ARG)
                 if (chantierId != null) {
+                    // Appel à loadChantierById est déjà dans ChantierDetailScreen via LaunchedEffect
                     ChantierDetailScreen(
                         chantierId = chantierId,
                         viewModel = chantierViewModel,
                         navController = navController
                     )
                 } else {
-                    Text("Erreur: Chantier ID manquant")
+                    Text("Erreur: Chantier ID manquant") // Devrait rarement arriver avec NavType.LongType
                 }
             }
             composable(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE) {
@@ -201,10 +207,15 @@ fun AppNavigation(
             composable(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE) {
                 TaillesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
             }
+            // NOUVELLE ROUTE POUR L'ÉCRAN DES DÉSHERBAGES PRIORITAIRES
+            composable(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE) {
+                // Nous créerons DesherbagesPrioritairesScreen.kt plus tard
+                DesherbagesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
+            }
             composable(route = ScreenDestinations.SETTINGS_ROUTE) {
                 SettingsScreen(
                     settingsViewModel = settingsViewModel,
-                    navController = navController
+                    navController = navController // navController est passé ici
                 )
             }
         }

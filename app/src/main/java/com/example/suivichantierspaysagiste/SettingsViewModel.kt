@@ -28,7 +28,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // NOUVEAU: StateFlows et fonctions pour les seuils des tontes
+    // Seuils pour les tontes (existant)
     val tonteSeuilVert: StateFlow<Int> = settingsDataStore.tonteSeuilVertFlow
         .stateIn(
             scope = viewModelScope,
@@ -49,7 +49,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { settingsDataStore.setTonteSeuilOrange(days) }
     }
 
-    // NOUVEAU: StateFlows et fonctions pour les seuils des tailles (si 1/2 faite)
+    // Seuils pour les tailles (existant)
     val tailleSeuil1Vert: StateFlow<Int> = settingsDataStore.tailleSeuil1VertFlow
         .stateIn(
             scope = viewModelScope,
@@ -68,6 +68,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         )
     fun setTailleSeuil2Orange(days: Int) {
         viewModelScope.launch { settingsDataStore.setTailleSeuil2Orange(days) }
+    }
+
+    // NOUVEAU: StateFlow et fonction pour le seuil de désherbage
+    val desherbageSeuilOrangeJoursAvant: StateFlow<Int> = settingsDataStore.desherbageSeuilOrangeJoursAvantFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = SettingsDataStore.DEFAULT_DESHERBAGE_SEUIL_ORANGE_JOURS_AVANT
+        )
+    fun setDesherbageSeuilOrangeJoursAvant(days: Int) {
+        viewModelScope.launch { settingsDataStore.setDesherbageSeuilOrangeJoursAvant(days) }
     }
 }
 

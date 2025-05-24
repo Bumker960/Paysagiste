@@ -2,25 +2,25 @@ package com.example.suivichantierspaysagiste
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.Date
-import androidx.room.Index
 
 @Entity(
-    tableName = "interventions",
+    tableName = "desherbages_planifies",
     foreignKeys = [ForeignKey(
         entity = Chantier::class,
         parentColumns = ["id"],
         childColumns = ["chantierId"],
-        onDelete = ForeignKey.CASCADE
+        onDelete = ForeignKey.CASCADE // Si un chantier est supprimé, ses planifications le sont aussi
     )],
     indices = [Index(value = ["chantierId"])]
 )
-data class Intervention(
+data class DesherbagePlanifie(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val chantierId: Long,
-    val typeIntervention: String, // Sera "Tonte de pelouse", "Taille de haie", ou "Désherbage"
-    val dateIntervention: Date,
-    var notes: String? = null
+    val datePlanifiee: Date,
+    var estEffectue: Boolean = false,
+    var notesPlanification: String? = null // Notes spécifiques à cette planification
 )
