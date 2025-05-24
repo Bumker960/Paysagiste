@@ -6,12 +6,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Add // Utilisé indirectement via d'autres écrans ou dialogues potentiels
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event // Pour les dates planifiées
 import androidx.compose.material.icons.filled.Done // Pour marquer comme fait
-import androidx.compose.material.icons.filled.Close // Pour annuler/supprimer
+// import androidx.compose.material.icons.filled.Close // Pas directement utilisé, mais bon à garder si besoin
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog // IMPORT AJOUTÉ ICI
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import java.text.SimpleDateFormat
@@ -29,7 +30,9 @@ import java.util.concurrent.TimeUnit
 @OptIn(ExperimentalMaterial3Api::class)
 private object NoFutureDatesSelectableDates : SelectableDates {
     override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-        return utcTimeMillis <= System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1) // Permet aujourd'hui et hier
+        // Permet de sélectionner aujourd'hui et les dates passées.
+        // Ajoute une petite marge pour éviter les problèmes de fuseau horaire strict pour "aujourd'hui".
+        return utcTimeMillis <= System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1)
     }
 
     override fun isSelectableYear(year: Int): Boolean {
@@ -40,10 +43,10 @@ private object NoFutureDatesSelectableDates : SelectableDates {
 @OptIn(ExperimentalMaterial3Api::class)
 private object AllDatesSelectableDates : SelectableDates { // Pour la planification des désherbages
     override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-        return true
+        return true // Toutes les dates sont sélectionnables
     }
     override fun isSelectableYear(year: Int): Boolean {
-        return true
+        return true // Toutes les années sont sélectionnables
     }
 }
 
@@ -116,7 +119,7 @@ fun ChantierDetailScreen(
         if (chantier == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
-                Text("Chargement du chantier...")
+                // Text("Chargement du chantier...") // Optionnel: peut être redondant avec l'indicateur
             }
         } else {
             val currentChantier = chantier!!
@@ -154,11 +157,11 @@ fun ChantierDetailScreen(
                 InfoLine("Dernière tonte:", derniereTonte?.dateIntervention?.let { "${dateFormat.format(it)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - it.time)}j)" } ?: "Aucune", tonteUrgencyColor)
                 InfoLine("Nombre total de tontes:", "$nombreTotalTontes")
                 Button(
-                    onClick = { interventionTypeForNotes = null; showTonteDatePickerDialog = true },
+                    onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; showTonteDatePickerDialog = true },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    enabled = interventionTypeForNotes != "Tonte"
+                    enabled = interventionTypeForNotes != "Tonte de pelouse" // Utiliser le type exact
                 ) { Text("Enregistrer une Tonte") }
-                if (interventionTypeForNotes == "Tonte" && selectedDateForNotes != null) {
+                if (interventionTypeForNotes == "Tonte de pelouse" && selectedDateForNotes != null) {
                     InterventionNotesInputSection(
                         interventionType = "Tonte de pelouse",
                         selectedDate = selectedDateForNotes!!,
@@ -182,11 +185,11 @@ fun ChantierDetailScreen(
                 InfoLine("Nombre total de tailles:", "$nombreTotalTailles")
                 InfoLine("Tailles cette année:", "$nombreTaillesCetteAnnee / 2")
                 Button(
-                    onClick = { interventionTypeForNotes = null; showTailleDatePickerDialog = true },
+                    onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; showTailleDatePickerDialog = true },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    enabled = interventionTypeForNotes != "Taille"
+                    enabled = interventionTypeForNotes != "Taille de haie" // Utiliser le type exact
                 ) { Text("Enregistrer une Taille") }
-                if (interventionTypeForNotes == "Taille" && selectedDateForNotes != null) {
+                if (interventionTypeForNotes == "Taille de haie" && selectedDateForNotes != null) {
                     InterventionNotesInputSection(
                         interventionType = "Taille de haie",
                         selectedDate = selectedDateForNotes!!,
@@ -210,12 +213,12 @@ fun ChantierDetailScreen(
                 InfoLine("Nombre total de désherbages effectués:", "$nombreTotalDesherbagesEffectues")
 
                 Button(
-                    onClick = { showPlanifierDesherbageDialog = true; desherbagePlanifieAModifier = null }, // Ouvre pour ajouter
+                    onClick = { showPlanifierDesherbageDialog = true; desherbagePlanifieAModifier = null },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Text("Planifier un Désherbage") }
 
                 Button(
-                    onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; showDesherbageInterventionDatePickerDialog = true },
+                    onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; showDesherbageInterventionDatePickerDialog = true },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     enabled = interventionTypeForNotes != "Désherbage"
                 ) { Text("Enregistrer un Désherbage (Intervention)") }
@@ -232,7 +235,7 @@ fun ChantierDetailScreen(
                         },
                         onCancel = { interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; planificationLieeIdForNotes = null},
                         dateFormat = dateFormat,
-                        planificationLiee = prochainDesherbagePlanifie?.takeIf { it.id == planificationLieeIdForNotes }
+                        planificationLiee = desherbagesPlanifies.find { it.id == planificationLieeIdForNotes } // Trouver la planification liée
                     )
                 }
 
@@ -245,11 +248,10 @@ fun ChantierDetailScreen(
                             planification = planif,
                             dateFormat = dateFormat,
                             onMarkAsDone = {
-                                // Proposer d'enregistrer une intervention liée
                                 planificationLieeIdForNotes = planif.id
-                                selectedDateForNotes = planif.datePlanifiee // Pré-remplir la date
+                                selectedDateForNotes = planif.datePlanifiee
                                 interventionTypeForNotes = "Désherbage"
-                                currentInterventionNotes = planif.notesPlanification ?: "" // Pré-remplir notes si existent
+                                currentInterventionNotes = planif.notesPlanification ?: ""
                             },
                             onEdit = { desherbagePlanifieAModifier = planif; showPlanifierDesherbageDialog = true },
                             onDelete = { desherbagePlanifieASupprimerId = planif.id }
@@ -290,7 +292,7 @@ fun ChantierDetailScreen(
     // ---- DIALOGUES ----
     if (showEditChantierDialog && chantier != null) {
         EditChantierDialog(
-            chantierInitial = chantier!!, // Pass initial chantier
+            chantierInitial = chantier!!,
             onDismissRequest = { showEditChantierDialog = false },
             onConfirm = { chantierModifie ->
                 viewModel.updateChantier(chantierModifie)
@@ -337,8 +339,8 @@ fun ChantierDetailScreen(
     }
 
     // DatePickers pour interventions
-    if (showTonteDatePickerDialog) { DatePickerDialogIntervention(state = tonteDatePickerState, onDismiss = { showTonteDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Tonte"; currentInterventionNotes = ""; showTonteDatePickerDialog = false }) }
-    if (showTailleDatePickerDialog) { DatePickerDialogIntervention(state = tailleDatePickerState, onDismiss = { showTailleDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Taille"; currentInterventionNotes = ""; showTailleDatePickerDialog = false }) }
+    if (showTonteDatePickerDialog) { DatePickerDialogIntervention(state = tonteDatePickerState, onDismiss = { showTonteDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Tonte de pelouse"; currentInterventionNotes = ""; showTonteDatePickerDialog = false }) }
+    if (showTailleDatePickerDialog) { DatePickerDialogIntervention(state = tailleDatePickerState, onDismiss = { showTailleDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Taille de haie"; currentInterventionNotes = ""; showTailleDatePickerDialog = false }) }
     if (showDesherbageInterventionDatePickerDialog) { DatePickerDialogIntervention(state = desherbageInterventionDatePickerState, onDismiss = { showDesherbageInterventionDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Désherbage"; currentInterventionNotes = ""; showDesherbageInterventionDatePickerDialog = false }) }
 
 
@@ -348,11 +350,11 @@ fun ChantierDetailScreen(
             chantierId = chantier!!.id,
             desherbagePlanifieInitial = desherbagePlanifieAModifier,
             onDismissRequest = { showPlanifierDesherbageDialog = false; desherbagePlanifieAModifier = null },
-            onConfirm = { chantierId, date, notes, planifExistante ->
+            onConfirm = { chId, date, notes, planifExistante -> // Renommé chantierId en chId pour éviter shadowing
                 if (planifExistante != null) {
                     viewModel.updateDesherbagePlanifie(planifExistante.copy(datePlanifiee = date, notesPlanification = notes))
                 } else {
-                    viewModel.ajouterDesherbagePlanifie(chantierId, date, notes)
+                    viewModel.ajouterDesherbagePlanifie(chId, date, notes)
                 }
                 showPlanifierDesherbageDialog = false
                 desherbagePlanifieAModifier = null
@@ -380,7 +382,7 @@ fun ServiceSectionHeader(title: String) {
 
 @Composable
 fun InfoLine(label: String, value: String, color: Color = LocalContentColor.current) {
-    Row {
+    Row(modifier = Modifier.padding(bottom = 2.dp)) { // Ajout d'un léger padding pour espacement
         Text(label, fontWeight = FontWeight.SemiBold)
         Spacer(modifier = Modifier.width(4.dp))
         Text(value, color = color)
@@ -450,7 +452,7 @@ fun InterventionNotesInputSection(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     dateFormat: SimpleDateFormat,
-    planificationLiee: DesherbagePlanifie? = null // Pour afficher si c'est lié à une planification
+    planificationLiee: DesherbagePlanifie? = null
 ) {
     val paleColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
     val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -511,9 +513,9 @@ fun EditChantierDialog(
     var adresse by remember(chantierInitial.adresse) { mutableStateOf(chantierInitial.adresse ?: "") }
     var tonteActive by remember(chantierInitial.serviceTonteActive) { mutableStateOf(chantierInitial.serviceTonteActive) }
     var tailleActive by remember(chantierInitial.serviceTailleActive) { mutableStateOf(chantierInitial.serviceTailleActive) }
-    var desherbageActive by remember(chantierInitial.serviceDesherbageActive) { mutableStateOf(chantierInitial.serviceDesherbageActive) } // NOUVEAU
+    var desherbageActive by remember(chantierInitial.serviceDesherbageActive) { mutableStateOf(chantierInitial.serviceDesherbageActive) }
 
-    Dialog(onDismissRequest = onDismissRequest) {
+    Dialog(onDismissRequest = onDismissRequest) { // Utilisation du Dialog importé
         Card(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = MaterialTheme.shapes.large) {
             Column(
                 modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
@@ -526,7 +528,7 @@ fun EditChantierDialog(
 
                 ServiceActivationRow(label = "Suivi des Tontes Actif", checked = tonteActive, onCheckedChange = { tonteActive = it })
                 ServiceActivationRow(label = "Suivi des Tailles Actif", checked = tailleActive, onCheckedChange = { tailleActive = it })
-                ServiceActivationRow(label = "Suivi Désherbage Actif", checked = desherbageActive, onCheckedChange = { desherbageActive = it }) // NOUVEAU
+                ServiceActivationRow(label = "Suivi Désherbage Actif", checked = desherbageActive, onCheckedChange = { desherbageActive = it })
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismissRequest) { Text("Annuler") }
@@ -539,7 +541,7 @@ fun EditChantierDialog(
                                     adresse = adresse.ifBlank { null },
                                     serviceTonteActive = tonteActive,
                                     serviceTailleActive = tailleActive,
-                                    serviceDesherbageActive = desherbageActive // NOUVEAU
+                                    serviceDesherbageActive = desherbageActive
                                 ))
                             }
                         },
@@ -561,7 +563,7 @@ fun EditInterventionNoteDialog(
     var notesText by remember(intervention.notes) { mutableStateOf(intervention.notes ?: "") }
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
 
-    AlertDialog(
+    AlertDialog( // AlertDialog est correct ici
         onDismissRequest = onDismissRequest,
         title = { Text("Modifier la note") },
         text = {
@@ -577,7 +579,7 @@ fun EditInterventionNoteDialog(
 
 @Composable
 fun ConfirmDeleteDialog(title: String, text: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
+    AlertDialog( // AlertDialog est correct ici
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(text) },
@@ -586,7 +588,6 @@ fun ConfirmDeleteDialog(title: String, text: String, onConfirm: () -> Unit, onDi
     )
 }
 
-// NOUVEAU: Composable pour afficher un item de désherbage planifié
 @Composable
 fun DesherbagePlanifieItem(
     planification: DesherbagePlanifie,
@@ -639,12 +640,11 @@ fun DesherbagePlanifieItem(
     }
 }
 
-// NOUVEAU: Dialogue pour planifier/modifier un désherbage
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlanifierDesherbageDialog(
-    chantierId: Long, // Nécessaire si on ajoute une nouvelle planification
-    desherbagePlanifieInitial: DesherbagePlanifie?, // Null si ajout, non-null si modification
+    chantierId: Long,
+    desherbagePlanifieInitial: DesherbagePlanifie?,
     onDismissRequest: () -> Unit,
     onConfirm: (chantierId: Long, date: Date, notes: String?, planifExistante: DesherbagePlanifie?) -> Unit
 ) {
@@ -654,13 +654,12 @@ fun PlanifierDesherbageDialog(
     var notes by remember(desherbagePlanifieInitial?.notesPlanification) { mutableStateOf(desherbagePlanifieInitial?.notesPlanification ?: "") }
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = desherbagePlanifieInitial?.datePlanifiee?.time ?: System.currentTimeMillis(),
-        selectableDates = AllDatesSelectableDates // Permet de sélectionner toutes les dates
+        selectableDates = AllDatesSelectableDates
     )
     var showDatePicker by remember { mutableStateOf(false) }
-    // Utiliser un état pour la date sélectionnée pour pouvoir l'afficher avant confirmation du DatePicker
-    var tempSelectedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis) }
+    var tempSelectedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis ?: System.currentTimeMillis()) } // Assurer une valeur initiale non nulle
 
-    Dialog(onDismissRequest = onDismissRequest) {
+    Dialog(onDismissRequest = onDismissRequest) { // Utilisation du Dialog importé
         Card(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = MaterialTheme.shapes.large) {
             Column(
                 modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
@@ -670,7 +669,7 @@ fun PlanifierDesherbageDialog(
                 Text(title, style = MaterialTheme.typography.titleLarge)
 
                 Button(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(tempSelectedDateMillis?.let { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(it)) } ?: "Choisir une date")
+                    Text(SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(tempSelectedDateMillis)))
                 }
 
                 if (showDatePicker) {
@@ -678,7 +677,7 @@ fun PlanifierDesherbageDialog(
                         onDismissRequest = { showDatePicker = false },
                         confirmButton = {
                             TextButton(onClick = {
-                                tempSelectedDateMillis = datePickerState.selectedDateMillis // Mettre à jour la date affichée
+                                datePickerState.selectedDateMillis?.let { tempSelectedDateMillis = it } // Mettre à jour la date seulement si non null
                                 showDatePicker = false
                             }) { Text("OK") }
                         },
@@ -699,11 +698,8 @@ fun PlanifierDesherbageDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            tempSelectedDateMillis?.let { dateMillis ->
-                                onConfirm(chantierId, Date(dateMillis), notes.ifBlank { null }, desherbagePlanifieInitial)
-                            }
-                        },
-                        enabled = tempSelectedDateMillis != null // Activer seulement si une date est sélectionnée
+                            onConfirm(chantierId, Date(tempSelectedDateMillis), notes.ifBlank { null }, desherbagePlanifieInitial)
+                        }
                     ) { Text(if (isEditing) "Enregistrer" else "Planifier") }
                 }
             }
