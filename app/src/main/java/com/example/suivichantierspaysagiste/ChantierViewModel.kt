@@ -47,7 +47,6 @@ class ChantierViewModel(
     private val settingsDataStore = SettingsDataStore(application.applicationContext)
 
     // --- StateFlows pour les seuils (lus depuis SettingsDataStore) ---
-    // Ces StateFlows utilisent settingsDataStore, donc settingsDataStore doit être défini AVANT.
     private val tonteSeuilVert: StateFlow<Int> = settingsDataStore.tonteSeuilVertFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsDataStore.DEFAULT_TONTE_SEUIL_VERT)
 
@@ -77,8 +76,6 @@ class ChantierViewModel(
         else repository.getChantierByIdFlow(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
 
-    // ... (le reste de vos StateFlows pour derniereTonte, nombreTotalTontes, selectedChantierTonteUrgencyColor, etc.
-    //      ils doivent aussi être APRÈS la définition de _selectedChantierId et, si applicable, settingsDataStore)
 
     val derniereTonte: StateFlow<Intervention?> = _selectedChantierId.flatMapLatest { id ->
         if (id == null) flowOf(null as Intervention?)
@@ -151,7 +148,7 @@ class ChantierViewModel(
             }
             when (sortOrder) {
                 SortOrder.ASC -> items.sortedBy { it.joursEcoules ?: Long.MAX_VALUE }
-                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L }
+                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L } // Traiter null comme le plus ancien
                 SortOrder.NONE -> items.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -170,7 +167,7 @@ class ChantierViewModel(
     private fun getPriorityScore(color: Color): Int {
         return when (color) {
             Color.Red -> 0
-            OrangeCustom -> 1
+            OrangeCustom -> 1 // Assurez-vous que OrangeCustom est défini et accessible
             Color.Green -> 2
             else -> 3
         }
@@ -195,7 +192,7 @@ class ChantierViewModel(
             }
             when (sortOrder) {
                 SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MIN_VALUE })
-                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: Long.MAX_VALUE })
+                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: Long.MAX_VALUE }) // Traiter null comme le plus ancien
                 SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -210,6 +207,14 @@ class ChantierViewModel(
     fun ajouterTonte(chantierId: Long, dateIntervention: Date, notes: String? = null) { viewModelScope.launch { repository.insertIntervention(Intervention(chantierId = chantierId, typeIntervention = "Tonte de pelouse", dateIntervention = dateIntervention, notes = notes)) } }
     fun ajouterTailleHaie(chantierId: Long, dateIntervention: Date, notes: String? = null) { viewModelScope.launch { repository.insertIntervention(Intervention(chantierId = chantierId, typeIntervention = "Taille de haie", dateIntervention = dateIntervention, notes = notes)) } }
     fun updateChantier(chantier: Chantier) { viewModelScope.launch { repository.updateChantier(chantier) } }
+
+    fun updateInterventionNotes(intervention: Intervention, newNotes: String?) { // AJOUT DE CETTE FONCTION
+        val updatedIntervention = intervention.copy(notes = newNotes?.ifBlank { null })
+        viewModelScope.launch {
+            repository.updateIntervention(updatedIntervention)
+        }
+    }
+
     fun deleteChantier(chantier: Chantier) { viewModelScope.launch { repository.deleteChantier(chantier) } }
     fun deleteIntervention(intervention: Intervention) { viewModelScope.launch { repository.deleteIntervention(intervention) } }
 }
@@ -218,12 +223,10 @@ class ChantierViewModel(
 class ChantierViewModelFactory(
     private val application: Application,
     private val repository: ChantierRepository
-    // settingsDataStore n'est plus passé ici car le ViewModel l'instancie lui-même
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChantierViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            // Le ViewModel prend 'application' et 'repository'
             return ChantierViewModel(application, repository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class for ChantierViewModel")
