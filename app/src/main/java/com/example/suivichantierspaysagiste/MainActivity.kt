@@ -43,7 +43,7 @@ sealed class BottomNavItem(val route: String, val label: String, val icon: Image
     object Chantiers : BottomNavItem(ScreenDestinations.CHANTIER_LIST_ROUTE, "Chantiers", Icons.Filled.List)
     object TontesPrio : BottomNavItem(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE, "Tontes Prio.", Icons.Filled.Grass)
     object TaillesPrio : BottomNavItem(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE, "Tailles Prio.", Icons.Filled.ContentCut)
-    object DesherbagesPrio : BottomNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage", Icons.Filled.Spa) // NOUVEL ITEM
+    object DesherbagesPrio : BottomNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage", Icons.Filled.Spa)
     object Reglages : BottomNavItem(ScreenDestinations.SETTINGS_ROUTE, "Réglages", Icons.Filled.Settings)
 }
 
@@ -133,7 +133,7 @@ fun AppNavigation(
         BottomNavItem.Chantiers,
         BottomNavItem.TontesPrio,
         BottomNavItem.TaillesPrio,
-        BottomNavItem.DesherbagesPrio, // NOUVEL ITEM AJOUTÉ À LA LISTE
+        BottomNavItem.DesherbagesPrio,
         BottomNavItem.Reglages
     )
 
@@ -146,22 +146,37 @@ fun AppNavigation(
                 val currentDestination = navBackStackEntry?.destination
 
                 bottomNavItems.forEach { screen ->
+                    val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route || (it.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true && screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE) } == true
+
                     NavigationBarItem(
                         icon = { Icon(screen.icon, contentDescription = screen.label) },
                         label = { Text(screen.label) },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                        selected = isSelected,
                         onClick = {
-                            if (currentDestination?.route != screen.route) { // Évite de naviguer vers la même destination
-                                if (screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE) {
-                                    chantierViewModel.onSearchQueryChanged("") // Réinitialise la recherche en allant à la liste des chantiers
-                                    chantierViewModel.clearSelectedChantierId() // Efface l'ID du chantier sélectionné
-                                }
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { // Pop jusqu'au début du graph pour éviter une pile énorme
-                                        saveState = true
+                            val targetRoute = screen.route
+                            if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE) {
+                                // Si on clique sur l'onglet "Chantiers"
+                                chantierViewModel.clearSelectedChantierId() // Toujours effacer l'ID sélectionné
+                                // Si nous ne sommes pas déjà sur la liste des chantiers (par exemple, sur une fiche détail ou un autre onglet)
+                                // Ou si nous sommes sur la liste mais voulons "rafraîchir" (bien que ce soit géré par clearSelectedChantierId)
+                                if (currentDestination?.route != ScreenDestinations.CHANTIER_LIST_ROUTE || currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
+                                    navController.navigate(targetRoute) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            inclusive = true // Efface toute la pile arrière pour cet onglet, y compris la fiche détail
+                                        }
+                                        launchSingleTop = true // Assure une seule instance de la liste des chantiers
                                     }
-                                    launchSingleTop = true // Évite de multiples copies de la même destination
-                                    restoreState = true // Restaure l'état si on revient à une destination déjà visitée
+                                }
+                            } else {
+                                // Pour les autres onglets (Tontes, Tailles, Désherbage, Réglages)
+                                if (currentDestination?.route != targetRoute) {
+                                    navController.navigate(targetRoute) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true // Sauvegarde l'état des autres onglets
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true // Restaure l'état en revenant sur l'onglet
+                                    }
                                 }
                             }
                         },
@@ -170,7 +185,7 @@ fun AppNavigation(
                             selectedTextColor = ModernColors.selectedContent,
                             unselectedIconColor = ModernColors.unselectedContent,
                             unselectedTextColor = ModernColors.unselectedContent,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) // Couleur de l'indicateur de sélection
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                         )
                     )
                 }
@@ -191,14 +206,13 @@ fun AppNavigation(
             ) { backStackEntry ->
                 val chantierId = backStackEntry.arguments?.getLong(ScreenDestinations.CHANTIER_ID_ARG)
                 if (chantierId != null) {
-                    // Appel à loadChantierById est déjà dans ChantierDetailScreen via LaunchedEffect
                     ChantierDetailScreen(
                         chantierId = chantierId,
                         viewModel = chantierViewModel,
                         navController = navController
                     )
                 } else {
-                    Text("Erreur: Chantier ID manquant") // Devrait rarement arriver avec NavType.LongType
+                    Text("Erreur: Chantier ID manquant")
                 }
             }
             composable(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE) {
@@ -207,15 +221,13 @@ fun AppNavigation(
             composable(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE) {
                 TaillesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
             }
-            // NOUVELLE ROUTE POUR L'ÉCRAN DES DÉSHERBAGES PRIORITAIRES
             composable(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE) {
-                // Nous créerons DesherbagesPrioritairesScreen.kt plus tard
                 DesherbagesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
             }
             composable(route = ScreenDestinations.SETTINGS_ROUTE) {
                 SettingsScreen(
                     settingsViewModel = settingsViewModel,
-                    navController = navController // navController est passé ici
+                    navController = navController
                 )
             }
         }
