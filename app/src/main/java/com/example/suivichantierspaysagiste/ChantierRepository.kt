@@ -25,10 +25,6 @@ class ChantierRepository(
         chantierDao.deleteChantier(chantier)
     }
 
-    suspend fun deleteIntervention(intervention: Intervention) {
-        interventionDao.deleteIntervention(intervention)
-    }
-
     // Fonctions pour les Interventions
     fun getInterventionsForChantier(chantierId: Long): Flow<List<Intervention>> {
         return interventionDao.getInterventionsForChantier(chantierId)
@@ -38,11 +34,19 @@ class ChantierRepository(
         interventionDao.insertIntervention(intervention)
     }
 
-     fun getLastInterventionOfTypeForChantierFlow(chantierId: Long, type: String): Flow<Intervention?> {
+    suspend fun updateIntervention(intervention: Intervention) { // AJOUT DE CETTE FONCTION
+        interventionDao.updateIntervention(intervention)
+    }
+
+    suspend fun deleteIntervention(intervention: Intervention) {
+        interventionDao.deleteIntervention(intervention)
+    }
+
+    fun getLastInterventionOfTypeForChantierFlow(chantierId: Long, type: String): Flow<Intervention?> {
         return interventionDao.getLastInterventionOfTypeForChantierFlow(chantierId, type)
     }
 
-     fun countInterventionsOfTypeForChantierFlow(chantierId: Long, type: String): Flow<Int> {
+    fun countInterventionsOfTypeForChantierFlow(chantierId: Long, type: String): Flow<Int> {
         return interventionDao.countInterventionsOfTypeForChantierFlow(chantierId, type)
     }
 
@@ -55,7 +59,7 @@ class ChantierRepository(
     fun getTaillesHaieBetweenDatesCountFlow(chantierId: Long, dateDebut: Date, dateFin: Date): Flow<Int> {
         return interventionDao.getTaillesHaieBetweenDatesCountFlow(chantierId, dateDebut, dateFin)
     }
-    fun getChantierByIdFlow(id: Long): Flow<Chantier?> { // Modifié
+    fun getChantierByIdFlow(id: Long): Flow<Chantier?> {
         return chantierDao.getChantierByIdFlow(id)
     }
     fun getTontesPrioritairesFlow(): Flow<List<TontePrioritaireInfo>> {
@@ -65,7 +69,7 @@ class ChantierRepository(
     fun getTaillesPrioritairesInfoFlow(startOfYearTimestamp: Long, endOfYearTimestamp: Long): Flow<List<TaillePrioritaireDbInfo>> {
         return chantierDao.getTaillesPrioritairesInfoFlow(startOfYearTimestamp, endOfYearTimestamp)
     }
-    suspend fun getInterventionById(interventionId: Long): Intervention? { // ou fun si DAO retourne Flow
+    suspend fun getInterventionById(interventionId: Long): Intervention? {
         return interventionDao.getInterventionById(interventionId)
     }
 }

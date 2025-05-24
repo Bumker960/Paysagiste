@@ -2,8 +2,8 @@ package com.example.suivichantierspaysagiste
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn // Pas utilisé directement ici, mais peut rester si d'autres parties l'utilisent
+import androidx.compose.foundation.lazy.items // Pas utilisé directement ici
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.Dialog // Pas utilisé directement ici, AlertDialog l'est
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import java.text.SimpleDateFormat
@@ -29,27 +29,21 @@ import java.util.concurrent.TimeUnit
 @OptIn(ExperimentalMaterial3Api::class)
 private object NoFutureDatesSelectableDates : SelectableDates {
     override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-        // Permet de sélectionner aujourd'hui et les dates passées.
-        // On compare le début du jour pour éviter les problèmes de fuseau horaire / heure exacte.
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        // Pour la date sélectionnée, on la normalise aussi au début du jour
         val selectedCal = Calendar.getInstance().apply { timeInMillis = utcTimeMillis }
         selectedCal.set(Calendar.HOUR_OF_DAY, 0)
         selectedCal.set(Calendar.MINUTE, 0)
         selectedCal.set(Calendar.SECOND, 0)
         selectedCal.set(Calendar.MILLISECOND, 0)
-
-        // Permettre la sélection si la date sélectionnée est aujourd'hui ou avant.
-        return selectedCal.timeInMillis <= System.currentTimeMillis()
+        return selectedCal.timeInMillis <= System.currentTimeMillis() // Permet aujourd'hui
     }
 
     override fun isSelectableYear(year: Int): Boolean {
-        // Permet de sélectionner l'année en cours et les années passées.
         return year <= Calendar.getInstance().get(Calendar.YEAR)
     }
 }
@@ -78,18 +72,23 @@ fun ChantierDetailScreen(
     val tailleUrgencyColor by viewModel.selectedChantierTailleUrgencyColor.collectAsStateWithLifecycle()
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
-    var showEditDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) } // Pour modifier le chantier
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) } // Pour supprimer le chantier
     var interventionASupprimer by remember { mutableStateOf<Intervention?>(null) }
     var showTonteDatePickerDialog by remember { mutableStateOf(false) }
     val tonteDatePickerState = rememberDatePickerState(selectableDates = NoFutureDatesSelectableDates)
     var showTailleDatePickerDialog by remember { mutableStateOf(false) }
     val tailleDatePickerState = rememberDatePickerState(selectableDates = NoFutureDatesSelectableDates)
 
-    // Nouveaux états pour la saisie des notes
+    // Nouveaux états pour la saisie des notes (ajout d'intervention)
     var interventionTypeForNotes by remember { mutableStateOf<String?>(null) } // "Tonte" ou "Taille"
     var selectedDateForNotes by remember { mutableStateOf<Date?>(null) }
     var currentInterventionNotes by remember { mutableStateOf("") }
+
+    // NOUVEAUX ÉTATS pour la modification de note d'une intervention existante
+    var interventionAModifierNote by remember { mutableStateOf<Intervention?>(null) }
+    var showEditNoteDialog by remember { mutableStateOf(false) }
+
 
     Column(
         modifier = Modifier
@@ -100,6 +99,7 @@ fun ChantierDetailScreen(
         if (chantier == null) {
             Text("Chargement du chantier...")
         } else {
+            // ... (Affichage du nom du chantier, adresse, boutons Edit/Delete Chantier - INCHANGÉ) ...
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -129,10 +129,9 @@ fun ChantierDetailScreen(
                     )
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Section Tontes
+            // Section Tontes (INCHANGÉ sauf si vous voulez ajouter des notes ici aussi)
             if (chantier!!.serviceTonteActive) {
                 Text("Suivi des Tontes :", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -147,11 +146,11 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        interventionTypeForNotes = null
+                        interventionTypeForNotes = null // Réinitialiser au cas où
                         showTonteDatePickerDialog = true
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = interventionTypeForNotes != "Tonte"
+                    enabled = interventionTypeForNotes != "Tonte" // Désactiver si déjà en saisie de notes pour une tonte
                 ) { Text("Enregistrer une Tonte") }
 
                 if (interventionTypeForNotes == "Tonte" && selectedDateForNotes != null) {
@@ -176,7 +175,8 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Section Tailles
+
+            // Section Tailles (INCHANGÉ sauf si vous voulez ajouter des notes ici aussi)
             if (chantier!!.serviceTailleActive) {
                 Text("Suivi des Tailles de Haie :", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -192,11 +192,11 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        interventionTypeForNotes = null
+                        interventionTypeForNotes = null // Réinitialiser
                         showTailleDatePickerDialog = true
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = interventionTypeForNotes != "Taille"
+                    enabled = interventionTypeForNotes != "Taille" // Désactiver si déjà en saisie de notes pour une taille
                 ) { Text("Enregistrer une Taille") }
 
                 if (interventionTypeForNotes == "Taille" && selectedDateForNotes != null) {
@@ -221,6 +221,7 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+
             if (!chantier!!.serviceTonteActive && !chantier!!.serviceTailleActive) {
                 Text("Aucun service de suivi (tonte ou taille) n'est actif pour ce chantier.", style = MaterialTheme.typography.bodyMedium)
                 Spacer(modifier = Modifier.height(24.dp))
@@ -234,9 +235,11 @@ fun ChantierDetailScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     interventions.forEach { intervention ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
+                            verticalAlignment = Alignment.Top // Changé pour mieux aligner les icônes avec le haut du texte
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("${intervention.typeIntervention} - ${dateFormat.format(intervention.dateIntervention)}")
@@ -249,8 +252,23 @@ fun ChantierDetailScreen(
                                     )
                                 }
                             }
-                            IconButton(onClick = { interventionASupprimer = intervention }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Supprimer cette intervention", tint = MaterialTheme.colorScheme.error)
+                            // MODIFICATION ICI: Ajout de l'icône Modifier la note
+                            Row { // Enveloppe les icônes dans une Row pour les mettre côte à côte
+                                IconButton(
+                                    onClick = {
+                                        interventionAModifierNote = intervention
+                                        showEditNoteDialog = true
+                                    },
+                                    modifier = Modifier.size(36.dp) // Réduire un peu la taille pour mieux s'aligner
+                                ) {
+                                    Icon(Icons.Filled.Edit, contentDescription = "Modifier la note")
+                                }
+                                IconButton(
+                                    onClick = { interventionASupprimer = intervention },
+                                    modifier = Modifier.size(36.dp) // Réduire un peu la taille
+                                ) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Supprimer cette intervention", tint = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                         Divider()
@@ -261,6 +279,8 @@ fun ChantierDetailScreen(
     }
 
     // ---- DIALOGUES ----
+
+    // Dialogue pour supprimer une intervention (INCHANGÉ)
     if (interventionASupprimer != null) {
         val interventionPourDialogue = interventionASupprimer!!
         AlertDialog(
@@ -282,6 +302,7 @@ fun ChantierDetailScreen(
         )
     }
 
+    // Dialogue pour modifier le chantier (INCHANGÉ)
     if (showEditDialog && chantier != null) {
         EditChantierDialog(
             chantier = chantier!!,
@@ -293,6 +314,7 @@ fun ChantierDetailScreen(
         )
     }
 
+    // Dialogue pour supprimer le chantier (INCHANGÉ)
     if (showDeleteConfirmDialog && chantier != null) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
@@ -303,7 +325,7 @@ fun ChantierDetailScreen(
                     onClick = {
                         viewModel.deleteChantier(chantier!!)
                         showDeleteConfirmDialog = false
-                        navController.popBackStack()
+                        navController.popBackStack() // Retour à l'écran précédent après suppression
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("Supprimer") }
@@ -314,7 +336,7 @@ fun ChantierDetailScreen(
         )
     }
 
-    // DatePicker pour les TONTES
+    // DatePicker pour les TONTES (INCHANGÉ)
     if (showTonteDatePickerDialog) {
         DatePickerDialog(
             onDismissRequest = { showTonteDatePickerDialog = false },
@@ -324,7 +346,7 @@ fun ChantierDetailScreen(
                     tonteDatePickerState.selectedDateMillis?.let { millis ->
                         selectedDateForNotes = Date(millis)
                         interventionTypeForNotes = "Tonte"
-                        currentInterventionNotes = ""
+                        currentInterventionNotes = "" // Réinitialiser les notes pour une nouvelle intervention
                     }
                 }) { Text("OK") }
             },
@@ -334,7 +356,7 @@ fun ChantierDetailScreen(
         ) { DatePicker(state = tonteDatePickerState) }
     }
 
-    // DatePicker pour les TAILLES
+    // DatePicker pour les TAILLES (INCHANGÉ)
     if (showTailleDatePickerDialog) {
         DatePickerDialog(
             onDismissRequest = { showTailleDatePickerDialog = false },
@@ -344,7 +366,7 @@ fun ChantierDetailScreen(
                     tailleDatePickerState.selectedDateMillis?.let { millis ->
                         selectedDateForNotes = Date(millis)
                         interventionTypeForNotes = "Taille"
-                        currentInterventionNotes = ""
+                        currentInterventionNotes = "" // Réinitialiser les notes
                     }
                 }) { Text("OK") }
             },
@@ -353,8 +375,25 @@ fun ChantierDetailScreen(
             }
         ) { DatePicker(state = tailleDatePickerState) }
     }
+
+    // NOUVEAU DIALOGUE: Pour modifier la note d'une intervention existante
+    if (showEditNoteDialog && interventionAModifierNote != null) {
+        EditInterventionNoteDialog( // Appel du nouveau Composable de dialogue
+            intervention = interventionAModifierNote!!,
+            onDismissRequest = {
+                showEditNoteDialog = false
+                interventionAModifierNote = null // Important de réinitialiser
+            },
+            onConfirm = { nouvellesNotes ->
+                viewModel.updateInterventionNotes(interventionAModifierNote!!, nouvellesNotes)
+                showEditNoteDialog = false
+                interventionAModifierNote = null // Important de réinitialiser
+            }
+        )
+    }
 }
 
+// Composable pour la section de saisie des notes (INCHANGÉ)
 @Composable
 fun InterventionNotesInputSection(
     selectedDate: Date,
@@ -364,10 +403,8 @@ fun InterventionNotesInputSection(
     onCancel: () -> Unit,
     dateFormat: SimpleDateFormat
 ) {
-    // Définition d'une couleur vert pâle personnalisée
-    val paleGreen = Color(0xFFE8F5E9) // Un vert très clair (Material Design Green 50)
-    // Couleur de contenu qui contraste bien avec le vert pâle (un vert foncé)
-    val darkGreenContent = Color(0xFF1B5E20) // Material Design Green 900
+    val paleGreen = Color(0xFFE8F5E9)
+    val darkGreenContent = Color(0xFF1B5E20)
 
     Card(
         modifier = Modifier
@@ -375,15 +412,14 @@ fun InterventionNotesInputSection(
             .padding(vertical = 8.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(
-            containerColor = paleGreen, // <<<<------ COULEUR VERT PÂLE APPLIQUÉE
-            contentColor = darkGreenContent // Couleur de contenu pour contraster
+            containerColor = paleGreen,
+            contentColor = darkGreenContent
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Ajouter des notes pour l'intervention du : ${dateFormat.format(selectedDate)}",
                 style = MaterialTheme.typography.titleSmall
-                // La couleur du texte sera darkGreenContent grâce au contentColor de la Card
             )
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
@@ -392,8 +428,6 @@ fun InterventionNotesInputSection(
                 label = { Text("Notes (optionnel)") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
-                // Les couleurs du TextField s'adapteront généralement bien,
-                // mais peuvent être personnalisées via le paramètre `colors` de OutlinedTextField si besoin.
             )
             Spacer(modifier = Modifier.height(12.dp))
             Row(
@@ -401,14 +435,10 @@ fun InterventionNotesInputSection(
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(onClick = onCancel) {
-                    Text("Annuler") // La couleur de ce texte sera darkGreenContent
+                    Text("Annuler")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = onConfirm
-                    // Les couleurs du bouton peuvent aussi être personnalisées via ButtonDefaults.buttonColors
-                    // si le contraste n'est pas bon avec darkGreenContent pour le texte du bouton.
-                ) {
+                Button(onClick = onConfirm) {
                     Text("Valider Intervention")
                 }
             }
@@ -416,6 +446,7 @@ fun InterventionNotesInputSection(
     }
 }
 
+// Composable pour le dialogue de modification du chantier (INCHANGÉ)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditChantierDialog(
@@ -430,11 +461,15 @@ fun EditChantierDialog(
 
     Dialog(onDismissRequest = onDismissRequest) {
         Card(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             shape = MaterialTheme.shapes.large
         ) {
             Column(
-                modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()), // Permet le défilement si le contenu est trop grand
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -444,11 +479,15 @@ fun EditChantierDialog(
 
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Checkbox(checked = tonteActive, onCheckedChange = { tonteActive = it })
-                    Text("Suivi des Tontes Actif", modifier = Modifier.clickable { tonteActive = !tonteActive }.padding(start = 4.dp))
+                    Text("Suivi des Tontes Actif", modifier = Modifier
+                        .clickable { tonteActive = !tonteActive }
+                        .padding(start = 4.dp))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Checkbox(checked = tailleActive, onCheckedChange = { tailleActive = it })
-                    Text("Suivi des Tailles Actif", modifier = Modifier.clickable { tailleActive = !tailleActive }.padding(start = 4.dp))
+                    Text("Suivi des Tailles Actif", modifier = Modifier
+                        .clickable { tailleActive = !tailleActive }
+                        .padding(start = 4.dp))
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismissRequest) { Text("Annuler") }
@@ -471,4 +510,53 @@ fun EditChantierDialog(
             }
         }
     }
+}
+
+// NOUVEAU COMPOSABLE: Dialogue pour modifier la note d'une intervention
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditInterventionNoteDialog(
+    intervention: Intervention,
+    onDismissRequest: () -> Unit,
+    onConfirm: (String?) -> Unit // Prend les nouvelles notes (String nullable)
+) {
+    var notesText by remember(intervention.notes) { mutableStateOf(intervention.notes ?: "") }
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
+
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text("Modifier la note") },
+        text = {
+            Column { // Ajout d'une Column pour mieux structurer si besoin
+                Text(
+                    "Intervention: ${intervention.typeIntervention} du ${dateFormat.format(intervention.dateIntervention)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    label = { Text("Note") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 5
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(notesText.ifBlank { null }) // Passe null si le texte est vide ou ne contient que des espaces
+                }
+            ) {
+                Text("Enregistrer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Annuler")
+            }
+        }
+    )
 }
