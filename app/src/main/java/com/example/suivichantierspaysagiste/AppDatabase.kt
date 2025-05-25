@@ -8,8 +8,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-// VERSION INCLEMENTÉE à 5 pour la nouvelle migration
-@Database(entities = [Chantier::class, Intervention::class, DesherbagePlanifie::class], version = 5, exportSchema = false)
+// VERSION INCLEMENTÉE à 6 pour la nouvelle migration
+@Database(entities = [Chantier::class, Intervention::class, DesherbagePlanifie::class], version = 6, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
@@ -21,7 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // Migration existante de 2 à 3 (pour DesherbagePlanifie et serviceDesherbageActive)
+        // Migration existante de 2 à 3
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -39,7 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // Migration existante de la version 3 à 4 pour ajouter les colonnes exporteAgenda
+        // Migration existante de la version 3 à 4
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `interventions` ADD COLUMN `exporteAgenda` INTEGER NOT NULL DEFAULT 0")
@@ -47,23 +47,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // NOUVELLE migration de la version 4 à 5 pour ajouter les champs de chronométrage à Intervention
+        // Migration existante de la version 4 à 5
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Ajouter les nouvelles colonnes à la table interventions
-                // On rend heureDebut nullable pour le moment, car dateIntervention existe déjà.
-                // On pourrait envisager de copier dateIntervention vers heureDebut pour les anciennes données
-                // mais pour l'instant, on les ajoute comme nullables et on gère la logique dans le code.
-                db.execSQL("ALTER TABLE `interventions` ADD COLUMN `heureDebut` INTEGER") // Nullable, car dateIntervention existe
-                db.execSQL("ALTER TABLE `interventions` ADD COLUMN `heureFin` INTEGER") // Nullable
-                db.execSQL("ALTER TABLE `interventions` ADD COLUMN `dureeEffective` INTEGER") // Nullable, en millisecondes
+                db.execSQL("ALTER TABLE `interventions` ADD COLUMN `heureDebut` INTEGER")
+                db.execSQL("ALTER TABLE `interventions` ADD COLUMN `heureFin` INTEGER")
+                db.execSQL("ALTER TABLE `interventions` ADD COLUMN `dureeEffective` INTEGER")
                 db.execSQL("ALTER TABLE `interventions` ADD COLUMN `statutIntervention` TEXT NOT NULL DEFAULT '${InterventionStatus.COMPLETED.name}'")
-
-                // Potentiellement, mettre à jour heureDebut pour les anciennes interventions
-                // en utilisant la valeur de dateIntervention existante.
-                // Cela assure que heureDebut n'est pas null pour les anciennes données si on décide de le rendre non-nullable plus tard
-                // ou pour simplifier les requêtes.
+                // Mise à jour de heureDebut pour les anciennes interventions
                 db.execSQL("UPDATE `interventions` SET `heureDebut` = `dateIntervention` WHERE `heureDebut` IS NULL")
+            }
+        }
+
+        // NOUVELLE migration de la version 5 à 6 pour ajouter latitude et longitude à Chantiers
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Ajoute la colonne latitude à la table chantiers. REAL est utilisé pour les Double en SQLite.
+                db.execSQL("ALTER TABLE `chantiers` ADD COLUMN `latitude` REAL")
+                // Ajoute la colonne longitude à la table chantiers.
+                db.execSQL("ALTER TABLE `chantiers` ADD COLUMN `longitude` REAL")
             }
         }
 
@@ -75,8 +77,12 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "suivi_chantiers_database"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5) // Ajout de la nouvelle migration
-                    .fallbackToDestructiveMigrationFrom(1) // Gère les versions antérieures à la première migration définie (ici, < 2)
+                    // Ajout de la nouvelle migration MIGRATION_5_6 à la liste
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    // Gère les versions antérieures à la première migration définie (ici, < 2)
+                    // Si une version < 2 est détectée, la base de données sera détruite et reconstruite.
+                    // Soyez prudent avec cette option en production si des données importantes existent déjà.
+                    .fallbackToDestructiveMigrationFrom(1)
                     .build()
                 INSTANCE = instance
                 instance

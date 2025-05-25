@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
 
     <application
         android:name=".MonApplicationChantiers"
@@ -18,6 +23,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SuiviChantiersPaysagiste"
         tools:targetApi="31">
+
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyBS-rUcH-Yw1n99Onu46QDC7HUC65sJg-4" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -33,11 +43,6 @@
             android:name=".ChronomailleurService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-        <!--
-            foregroundServiceType="dataSync" est un choix raisonnable pour un chronomètre
-            qui enregistre des données de temps. Assurez-vous que cela correspond aux directives
-            de Google Play si vous publiez l'application.
-        -->
 
     </application>
 

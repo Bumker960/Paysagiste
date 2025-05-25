@@ -11,5 +11,7 @@ data class Chantier(
     var adresse: String? = null, // L'adresse est optionnelle
     var serviceTonteActive: Boolean = true,
     var serviceTailleActive: Boolean = true,
-    var serviceDesherbageActive: Boolean = true // NOUVEAU: Service de désherbage
+    var serviceDesherbageActive: Boolean = true, // Service de désherbage existant
+    var latitude: Double? = null, // NOUVEAU CHAMP pour la latitude
+    var longitude: Double? = null // NOUVEAU CHAMP pour la longitude
 )

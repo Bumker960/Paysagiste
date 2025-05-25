@@ -1,14 +1,11 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android) // Fournit une version de Kotlin
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    // Supprimez : kotlin("kapt") version "2.1.21" // Conflit et KSP est utilisé
-    // Assurez-vous que la version de KSP est compatible avec votre version de Kotlin (fournie par libs.plugins.kotlin.android)
-    // Exemple de version KSP compatible avec Kotlin 1.9.20 : "1.9.20-1.0.13"
-    // Remplacez "X.Y.Z-A.B.C" par la version correcte de KSP pour votre projet.
-    // Si la version de KSP est gérée dans votre build.gradle.kts racine avec apply false,
-    // alors ici, vous n'avez besoin que de : id("com.google.devtools.ksp")
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21" // Exemple, VÉRIFIEZ ET ADAPTEZ CETTE VERSION !
+    // Assurez-vous que la version de KSP est compatible avec votre version de Kotlin
+    // id("com.google.devtools.ksp") version "1.9.20-1.0.13" // Exemple, si Kotlin est 1.9.20
+    // Votre version actuelle :
+    id("com.google.devtools.ksp") version "2.0.0-1.0.21" // Gardez cette version si elle fonctionne pour vous
 }
 
 android {
@@ -19,8 +16,8 @@ android {
         applicationId = "com.example.suivichantierspaysagiste"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 1 // Vous pourriez incrémenter ceci si vous faites des releases
+        versionName = "1.0" // Idem
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -51,7 +48,7 @@ dependencies {
     val lifecycleVersion = "2.8.2" // Ou votre version stable actuelle
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycleVersion")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion") // Essentiel pour collectAsStateWithLifecycle
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -66,16 +63,17 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    implementation("androidx.compose.material:material-icons-extended:1.6.6")
-    implementation("androidx.datastore:datastore-preferences:1.1.7") // Ou la dernière version stable
+    implementation("androidx.compose.material:material-icons-extended:1.6.6") // Votre version actuelle
+    implementation("androidx.datastore:datastore-preferences:1.1.7") // Votre version actuelle
 
     // Room Dependencies
-    val room_version = "2.7.1" // La version que vous avez trouvée
-
-    // Room - Essentiel
+    val room_version = "2.7.1" // Votre version actuelle
     implementation("androidx.room:room-runtime:$room_version")
-    ksp("androidx.room:room-compiler:$room_version") // Important: ksp pour les projets Kotlin
-
-    // Room - Extensions Kotlin et support des Coroutines (fortement recommandé)
+    ksp("androidx.room:room-compiler:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
+
+    // NOUVELLES DÉPENDANCES POUR GOOGLE MAPS ET LOCALISATION
+    implementation(libs.google.maps.sdk) // Ajouté via libs.versions.toml
+    implementation(libs.google.maps.compose) // Ajouté via libs.versions.toml
+    implementation(libs.google.location.services) // Ajouté via libs.versions.toml
 }

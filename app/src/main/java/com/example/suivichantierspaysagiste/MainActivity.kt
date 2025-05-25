@@ -17,8 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Grass // Tonte
 import androidx.compose.material.icons.filled.ContentCut // Taille
-import androidx.compose.material.icons.filled.Spa // Icône pour Désherbage (alternative: Eco, Nature, Yard)
+import androidx.compose.material.icons.filled.Spa // Icône pour Désherbage
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.LocationOn // NOUVELLE ICÔNE POUR LA CARTE
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,17 +55,18 @@ sealed class BottomNavItem(val route: String, val label: String, val icon: Image
     object TontesPrio : BottomNavItem(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE, "Tontes Prio.", Icons.Filled.Grass)
     object TaillesPrio : BottomNavItem(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE, "Tailles Prio.", Icons.Filled.ContentCut)
     object DesherbagesPrio : BottomNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage", Icons.Filled.Spa)
+    object Carte : BottomNavItem(ScreenDestinations.MAP_ROUTE, "Carte", Icons.Filled.LocationOn) // NOUVEL ITEM POUR LA CARTE
     object Reglages : BottomNavItem(ScreenDestinations.SETTINGS_ROUTE, "Réglages", Icons.Filled.Settings)
 }
 
 // Définition de nos couleurs modernes
-object ModernColors {
+object ModernColors { // Cet objet était déjà défini, je le garde tel quel
     val barBackground = Color(0xFF004D40)
     val selectedContent = Color.White
     val unselectedContent = Color(0xFFB2DFDB)
 }
 
-// Définition des schémas de couleurs
+// Définition des schémas de couleurs (existants)
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF558B2F),
     secondary = Color(0xFF8BC34A),
@@ -76,7 +78,7 @@ private val DarkColorScheme = darkColorScheme(
     onTertiary = Color.Black,
     onBackground = Color.White,
     onSurface = Color.White,
-    primaryContainer = ModernColors.barBackground, // Utilisé pour la carte du chrono
+    primaryContainer = ModernColors.barBackground,
     onPrimaryContainer = ModernColors.selectedContent
 )
 
@@ -91,7 +93,7 @@ private val LightColorScheme = lightColorScheme(
     onTertiary = Color.Black,
     onBackground = Color.Black,
     onSurface = Color.Black,
-    primaryContainer = ModernColors.barBackground, // Utilisé pour la carte du chrono
+    primaryContainer = ModernColors.barBackground,
     onPrimaryContainer = ModernColors.selectedContent
 )
 
@@ -108,30 +110,24 @@ class MainActivity : ComponentActivity() {
         SettingsViewModelFactory(application)
     }
 
-    // Lanceur pour la permission de notification
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
             if (isGranted) {
                 // La permission est accordée.
             } else {
                 // L'utilisateur a refusé la permission.
-                // Vous pouvez afficher un message expliquant pourquoi la permission est nécessaire.
             }
         }
 
     private fun askNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
             ) {
                 // La permission est déjà accordée
             } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
-                // Afficher une UI expliquant pourquoi la permission est utile
-                // puis appeler requestPermissionLauncher.launch(...)
-                // Pour l'instant, on demande directement :
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                // Demander directement la permission
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
@@ -141,7 +137,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createNotificationChannelForChronoService(this)
-        askNotificationPermission() // Demander la permission au démarrage
+        askNotificationPermission()
 
         setContent {
             val useDarkTheme by settingsViewModel.isDarkModeEnabled.collectAsStateWithLifecycle()
@@ -158,6 +154,7 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(
                     chantierViewModel = chantierViewModel,
                     settingsViewModel = settingsViewModel
+                    // Le MapViewModel sera ajouté plus tard si nécessaire, ou ses fonctions intégrées au ChantierViewModel
                 )
             }
         }
@@ -167,7 +164,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Chronomètre Service Channel"
             val descriptionText = "Affiche le chronomètre en cours pour une intervention"
-            val importance = NotificationManager.IMPORTANCE_LOW // LOW pour ne pas être trop intrusif
+            val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(ChronomailleurService.NOTIFICATION_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
                 setSound(null, null)
@@ -185,28 +182,22 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation(
     chantierViewModel: ChantierViewModel,
     settingsViewModel: SettingsViewModel
+    // mapViewModel: MapViewModel // Sera ajouté plus tard si on crée un ViewModel dédié pour la carte
 ) {
     val navController: NavHostController = rememberNavController()
-    val context = LocalContext.current // Pour demander la permission
+    val context = LocalContext.current
 
-    // Demander la permission de notification si ce n'est pas déjà fait
-    // (Bien que ce soit mieux dans onCreate de l'Activity pour un seul appel)
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                // La logique de demande de permission est dans MainActivity.onCreate maintenant.
-                // On pourrait ajouter un rappel ici si l'utilisateur navigue vers un écran qui en a besoin
-                // et qu'elle n'a pas été accordée.
-            }
-        }
+        // La logique de demande de permission est gérée dans onCreate de MainActivity
     }
 
-
+    // MISE À JOUR de la liste pour inclure l'onglet Carte
     val bottomNavItems = listOf(
         BottomNavItem.Chantiers,
         BottomNavItem.TontesPrio,
         BottomNavItem.TaillesPrio,
         BottomNavItem.DesherbagesPrio,
+        BottomNavItem.Carte, // AJOUT DE L'ONGLET CARTE ICI
         BottomNavItem.Reglages
     )
 
@@ -227,26 +218,27 @@ fun AppNavigation(
                         selected = isSelected,
                         onClick = {
                             val targetRoute = screen.route
+                            // La logique de navigation existante est conservée, elle devrait bien gérer le nouvel onglet.
+                            if (currentDestination?.route != targetRoute) {
+                                navController.navigate(targetRoute) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        // Pour l'onglet Chantiers, on veut pouvoir revenir à la liste depuis un détail
+                                        // Pour les autres, on sauvegarde l'état.
+                                        saveState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
+                                        // Si on va vers la liste des chantiers et qu'on n'y est pas déjà (ou sur un détail),
+                                        // on pop jusqu'au début en incluant la destination actuelle si on était sur un détail.
+                                        inclusive = targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
+                                }
+                            } else if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
+                                // Si on est sur un détail et qu'on clique sur l'onglet Chantiers, on revient à la liste
+                                navController.popBackStack(ScreenDestinations.CHANTIER_LIST_ROUTE, inclusive = false)
+                            }
+                            // Si on clique sur l'onglet Chantiers et qu'on est déjà sur la liste des chantiers, on s'assure de vider le chantierId sélectionné
                             if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE) {
                                 chantierViewModel.clearSelectedChantierId()
-                                if (currentDestination?.route != ScreenDestinations.CHANTIER_LIST_ROUTE || currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
-                                    navController.navigate(targetRoute) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            inclusive = true
-                                        }
-                                        launchSingleTop = true
-                                    }
-                                }
-                            } else {
-                                if (currentDestination?.route != targetRoute) {
-                                    navController.navigate(targetRoute) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
                             }
                         },
                         colors = NavigationBarItemDefaults.colors(
@@ -254,7 +246,7 @@ fun AppNavigation(
                             selectedTextColor = ModernColors.selectedContent,
                             unselectedIconColor = ModernColors.unselectedContent,
                             unselectedTextColor = ModernColors.unselectedContent,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) // Couleur de l'indicateur
                         )
                     )
                 }
@@ -281,7 +273,7 @@ fun AppNavigation(
                         navController = navController
                     )
                 } else {
-                    Text("Erreur: Chantier ID manquant") // Devrait être géré plus élégamment
+                    Text("Erreur: Chantier ID manquant")
                 }
             }
             composable(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE) {
@@ -298,6 +290,13 @@ fun AppNavigation(
                     settingsViewModel = settingsViewModel,
                     navController = navController
                 )
+            }
+            // NOUVELLE DESTINATION POUR L'ÉCRAN CARTE
+            composable(route = ScreenDestinations.MAP_ROUTE) {
+                // Pour l'instant, un placeholder. Nous créerons MapScreen.kt ensuite.
+                // MapScreen(chantierViewModel = chantierViewModel /*, mapViewModel = mapViewModel */)
+                // Temporairement :
+                MapScreen(/*chantierViewModel = chantierViewModel*/) // Décommentez le ViewModel si/quand nécessaire
             }
         }
     }

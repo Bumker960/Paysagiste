@@ -1,5 +1,8 @@
 package com.example.suivichantierspaysagiste
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationOn // Icône pour la carte
+
 // Objet pour centraliser les définitions de nos routes
 object ScreenDestinations {
     const val CHANTIER_LIST_ROUTE = "chantier_list"
@@ -11,6 +14,7 @@ object ScreenDestinations {
 
     const val TONTES_PRIORITAIRES_ROUTE = "tontes_prioritaires"
     const val TAILLES_PRIORITAIRES_ROUTE = "tailles_prioritaires"
-    const val DESHERBAGES_PRIORITAIRES_ROUTE = "desherbages_prioritaires" // NOUVELLE ROUTE
+    const val DESHERBAGES_PRIORITAIRES_ROUTE = "desherbages_prioritaires"
     const val SETTINGS_ROUTE = "settings"
+    const val MAP_ROUTE = "map" // NOUVELLE ROUTE POUR L'ÉCRAN CARTE
 }
