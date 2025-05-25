@@ -18,6 +18,7 @@ import java.util.Date
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.graphics.Color
+import android.util.Log
 
 // --- Data classes pour l'UI (existantes et nouvelles) ---
 data class TontePrioritaireItem(
@@ -46,11 +47,14 @@ data class DesherbagePrioritaireUiItem(
     val joursAvantEcheance: Long?
 )
 
-// NOUVEAU: Data class pour représenter une intervention en cours avec sa durée écoulée
 data class InterventionEnCoursUi(
-    val intervention: Intervention,
+    val interventionId: Long,
+    val chantierId: Long,
+    val typeIntervention: String,
+    val nomChantier: String,
+    val heureDebut: Long,
     val dureeEcouleeFormattee: String,
-    val typeInterventionLisible: String // "Tonte", "Taille", "Désherbage"
+    val typeInterventionLisible: String
 )
 
 
@@ -62,11 +66,11 @@ enum class SortOrder {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChantierViewModel(
-    application: Application,
+    private val applicationContext: Application,
     private val repository: ChantierRepository
-) : AndroidViewModel(application) {
+) : AndroidViewModel(applicationContext) {
 
-    private val settingsDataStore = SettingsDataStore(application.applicationContext)
+    private val settingsDataStore = SettingsDataStore(applicationContext)
 
     // --- StateFlows pour les seuils (lus depuis SettingsDataStore) ---
     private val tonteSeuilVert: StateFlow<Int> = settingsDataStore.tonteSeuilVertFlow
@@ -125,7 +129,7 @@ class ChantierViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Color.Transparent)
 
     private val _tontesSortOrder = MutableStateFlow(SortOrder.DESC)
-    // val tontesSortOrder: StateFlow<SortOrder> = _tontesSortOrder.asStateFlow() // Déjà défini plus bas
+    val tontesSortOrder: StateFlow<SortOrder> = _tontesSortOrder.asStateFlow()
 
     val tontesPrioritaires: StateFlow<List<TontePrioritaireItem>> =
         combine(
@@ -145,7 +149,7 @@ class ChantierViewModel(
             }
             when (sortOrder) {
                 SortOrder.ASC -> items.sortedBy { it.joursEcoules ?: Long.MAX_VALUE }
-                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L }
+                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L } // -1L pour que null soit en dernier
                 SortOrder.NONE -> items.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -180,7 +184,7 @@ class ChantierViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Color.Transparent)
 
     private val _taillesSortOrder = MutableStateFlow(SortOrder.DESC)
-    // val taillesSortOrder: StateFlow<SortOrder> = _taillesSortOrder.asStateFlow() // Déjà défini plus bas
+    val taillesSortOrder: StateFlow<SortOrder> = _taillesSortOrder.asStateFlow()
 
     private fun getTaillesInfoFlowFromRepository(): Flow<List<TaillePrioritaireDbInfo>> {
         val calendar = Calendar.getInstance()
@@ -218,7 +222,7 @@ class ChantierViewModel(
             }
             when (sortOrder) {
                 SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MIN_VALUE })
-                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: Long.MAX_VALUE })
+                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: Long.MAX_VALUE }) // MAX_VALUE pour que null soit en dernier
                 SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -245,8 +249,8 @@ class ChantierViewModel(
         else repository.countInterventionsOfTypeForChantierFlow(id, "Désherbage")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
 
-    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC)
-    // val desherbagesSortOrder: StateFlow<SortOrder> = _desherbagesSortOrder.asStateFlow() // Déjà défini plus bas
+    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC) // Par défaut, ASC pour les désherbages (plus urgent en premier)
+    val desherbagesSortOrder: StateFlow<SortOrder> = _desherbagesSortOrder.asStateFlow()
 
     val desherbagesPrioritaires: StateFlow<List<DesherbagePrioritaireUiItem>> = combine(
         repository.getAllPendingDesherbagesFlow(),
@@ -287,135 +291,74 @@ class ChantierViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
-    // --- NOUVEAU: Logique pour le CHRONOMÈTRE ---
-    private val _interventionEnCours = MutableStateFlow<InterventionEnCoursUi?>(null)
-    val interventionEnCoursUi: StateFlow<InterventionEnCoursUi?> = _interventionEnCours.asStateFlow()
-
-    private var timerJob: Job? = null
-
-    // Appelé quand on charge un chantier, pour vérifier s'il y avait une intervention en cours pour ce chantier
-    private fun verifierInterventionEnCoursExistante(chantierId: Long) {
-        viewModelScope.launch {
-            // Vérifier pour chaque type d'intervention si une est en cours
-            val types = listOf("Tonte de pelouse", "Taille de haie", "Désherbage")
-            for (type in types) {
-                val interventionExistante = repository.getInterventionEnCours(chantierId, type)
-                if (interventionExistante != null) {
-                    _interventionEnCours.value = creerInterventionEnCoursUi(interventionExistante)
-                    lancerMiseAJourTimer()
-                    break // On suppose une seule intervention en cours à la fois par chantier pour simplifier
+    // --- CHRONOMÈTRE (Interaction avec ChronomailleurService) ---
+    val interventionEnCoursUi: StateFlow<InterventionEnCoursUi?> =
+        ChronomailleurService.serviceState.map { state ->
+            when (state) {
+                is ChronomailleurService.ChronoServiceState.Running -> {
+                    val typeLisible = when (state.typeIntervention) {
+                        "Tonte de pelouse" -> "Tonte"
+                        "Taille de haie" -> "Taille"
+                        "Désherbage" -> "Désherbage"
+                        else -> state.typeIntervention
+                    }
+                    InterventionEnCoursUi(
+                        interventionId = state.interventionId,
+                        chantierId = state.chantierId,
+                        typeIntervention = state.typeIntervention,
+                        nomChantier = state.nomChantier,
+                        heureDebut = state.heureDebut,
+                        dureeEcouleeFormattee = state.dureeFormattee,
+                        typeInterventionLisible = typeLisible
+                    )
                 }
+                ChronomailleurService.ChronoServiceState.Idle -> null
             }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+
+    fun demarrerInterventionChrono(chantierId: Long, typeIntervention: String, chantierNom: String) {
+        if (interventionEnCoursUi.value != null) {
+            Toast.makeText(applicationContext, "Un chronomètre est déjà en cours.", Toast.LENGTH_SHORT).show()
+            return
         }
-    }
-
-    private fun creerInterventionEnCoursUi(intervention: Intervention): InterventionEnCoursUi? {
-        if (intervention.heureDebut == null) return null
-        val dureeEcouleeMillis = System.currentTimeMillis() - intervention.heureDebut!!.time
-        val typeLisible = when (intervention.typeIntervention) {
-            "Tonte de pelouse" -> "Tonte"
-            "Taille de haie" -> "Taille"
-            "Désherbage" -> "Désherbage"
-            else -> intervention.typeIntervention
+        Log.d("ChantierViewModel", "Demande de démarrage du service pour chantier ID: $chantierId, Type: $typeIntervention")
+        val intent = Intent(applicationContext, ChronomailleurService::class.java).apply {
+            action = ChronomailleurService.ACTION_START
+            putExtra(ChronomailleurService.EXTRA_CHANTIER_ID, chantierId)
+            putExtra(ChronomailleurService.EXTRA_TYPE_INTERVENTION, typeIntervention)
+            putExtra(ChronomailleurService.EXTRA_CHANTIER_NOM, chantierNom)
         }
-        return InterventionEnCoursUi(
-            intervention = intervention,
-            dureeEcouleeFormattee = formaterDuree(dureeEcouleeMillis),
-            typeInterventionLisible = typeLisible
-        )
+        applicationContext.startService(intent)
     }
 
-
-    private fun lancerMiseAJourTimer() {
-        timerJob?.cancel() // Annule le job précédent s'il existe
-        timerJob = viewModelScope.launch {
-            while (true) {
-                _interventionEnCours.value?.let { current ->
-                    val nouvelleDureeMillis = System.currentTimeMillis() - current.intervention.heureDebut!!.time
-                    _interventionEnCours.value = current.copy(dureeEcouleeFormattee = formaterDuree(nouvelleDureeMillis))
-                }
-                delay(1000) // Met à jour toutes les secondes
-            }
+    fun terminerInterventionChrono(notes: String?) {
+        if (interventionEnCoursUi.value == null) {
+            Log.w("ChantierViewModel", "Aucun chronomètre en cours à terminer.")
+            return
         }
-    }
-
-    private fun formaterDuree(millis: Long): String {
-        val heures = TimeUnit.MILLISECONDS.toHours(millis)
-        val minutes = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
-        val secondes = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
-        return String.format("%02d:%02d:%02d", heures, minutes, secondes)
-    }
-
-    fun demarrerIntervention(chantierId: Long, typeIntervention: String) {
-        viewModelScope.launch {
-            // Vérifier s'il y a déjà une intervention en cours (globalement ou pour ce type)
-            // Pour l'instant, on simplifie : on écrase si une autre était en cours (ou on interdit)
-            if (_interventionEnCours.value != null) {
-                Toast.makeText(getApplication(), "Une intervention est déjà en cours.", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-
-            val maintenant = Date()
-            val nouvelleIntervention = Intervention(
-                chantierId = chantierId,
-                typeIntervention = typeIntervention,
-                dateIntervention = maintenant, // Sera heureDebut
-                heureDebut = maintenant,
-                statutIntervention = InterventionStatus.IN_PROGRESS.name
-            )
-            val idIntervention = repository.insertIntervention(nouvelleIntervention)
-            // Récupérer l'intervention avec son ID pour la stocker dans _interventionEnCours
-            val interventionAvecId = repository.getInterventionById(idIntervention)
-            if (interventionAvecId != null) {
-                _interventionEnCours.value = creerInterventionEnCoursUi(interventionAvecId)
-                lancerMiseAJourTimer()
-            }
+        Log.d("ChantierViewModel", "Demande d'arrêt du service.")
+        val intent = Intent(applicationContext, ChronomailleurService::class.java).apply {
+            action = ChronomailleurService.ACTION_STOP
+            putExtra(ChronomailleurService.EXTRA_NOTES, notes)
         }
+        applicationContext.startService(intent)
     }
 
-    fun terminerInterventionEnCours(notes: String?) {
-        viewModelScope.launch {
-            _interventionEnCours.value?.intervention?.let { interventionActive ->
-                timerJob?.cancel() // Arrête le timer
-                val maintenant = Date()
-                val duree = maintenant.time - interventionActive.heureDebut!!.time // heureDebut ne devrait pas être null ici
-
-                val interventionTerminee = interventionActive.copy(
-                    heureFin = maintenant,
-                    dureeEffective = duree,
-                    notes = notes?.ifBlank { null } ?: interventionActive.notes, // Conserve les notes si déjà présentes et nouvelles notes vides
-                    statutIntervention = InterventionStatus.COMPLETED.name
-                )
-                repository.updateIntervention(interventionTerminee)
-                _interventionEnCours.value = null // Efface l'intervention en cours de l'UI
-                // Rafraîchir la liste des interventions pour ce chantier si nécessaire (déjà géré par le Flow)
-            }
-        }
-    }
 
     // --- Fonctions de modification et d'action ---
     fun onSearchQueryChanged(query: String) { _searchQuery.value = query }
 
     fun loadChantierById(chantierId: Long) {
         _selectedChantierId.value = chantierId
-        // À chaque chargement de chantier, on vérifie s'il y avait une intervention en cours pour LUI
-        _interventionEnCours.value = null // D'abord reset pour éviter d'afficher un chrono d'un autre chantier
-        timerJob?.cancel()
-        verifierInterventionEnCoursExistante(chantierId)
     }
     fun clearSelectedChantierId() {
         _selectedChantierId.value = null
-        _interventionEnCours.value = null // Effacer aussi l'intervention en cours
-        timerJob?.cancel() // Arrêter le timer
     }
-
-
-    val tontesSortOrder: StateFlow<SortOrder> = _tontesSortOrder.asStateFlow()
-    val taillesSortOrder: StateFlow<SortOrder> = _taillesSortOrder.asStateFlow()
-    val desherbagesSortOrder: StateFlow<SortOrder> = _desherbagesSortOrder.asStateFlow()
 
     fun changerOrdreTriTontes(sortOrder: SortOrder) { _tontesSortOrder.value = sortOrder }
     fun changerOrdreTriTailles(sortOrder: SortOrder) { _taillesSortOrder.value = sortOrder }
+    // AJOUT DE LA MÉTHODE MANQUANTE
     fun changerOrdreTriDesherbages(sortOrder: SortOrder) { _desherbagesSortOrder.value = sortOrder }
 
 
@@ -435,7 +378,6 @@ class ChantierViewModel(
     fun deleteChantier(chantier: Chantier) { viewModelScope.launch { repository.deleteChantier(chantier) } }
 
 
-    // Les fonctions ajouterTonte, ajouterTailleHaie, ajouterDesherbageIntervention sont maintenant pour l'enregistrement MANUEL
     fun enregistrerInterventionManuelle(chantierId: Long, typeIntervention: String, dateDebut: Date, dateFin: Date?, dureeManuelleMillis: Long?, notes: String?) {
         viewModelScope.launch {
             val heureDebutEffective = dateDebut
@@ -447,23 +389,19 @@ class ChantierViewModel(
             } else if (dureeManuelleMillis != null && dureeManuelleMillis > 0) {
                 heureFinEffective = Date(dateDebut.time + dureeManuelleMillis)
             } else {
-                // Cas où ni dateFin valide ni durée manuelle n'est fournie.
-                // On pourrait choisir de ne pas enregistrer d'heure de fin/durée, ou mettre une durée par défaut (ex: 0 ou 1h)
-                // Pour l'instant, on les laisse nulls si non valides.
-                if (dureeManuelleMillis != null && dureeManuelleMillis <=0) dureeEffectiveMillis = null // Invalide
-                if (dateFin != null && !dateDebut.before(dateFin)) heureFinEffective = null // Invalide
+                if (dureeManuelleMillis != null && dureeManuelleMillis <=0) dureeEffectiveMillis = null
+                if (dateFin != null && !dateDebut.before(dateFin)) heureFinEffective = null
             }
-
 
             val intervention = Intervention(
                 chantierId = chantierId,
                 typeIntervention = typeIntervention,
-                dateIntervention = heureDebutEffective, // dateIntervention est l'heure de début
+                dateIntervention = heureDebutEffective,
                 heureDebut = heureDebutEffective,
                 heureFin = heureFinEffective,
                 dureeEffective = dureeEffectiveMillis,
                 notes = notes,
-                statutIntervention = InterventionStatus.COMPLETED.name // Manuel donc complété
+                statutIntervention = InterventionStatus.COMPLETED.name
             )
             repository.insertIntervention(intervention)
         }
@@ -487,17 +425,16 @@ class ChantierViewModel(
             } else if (nouvelleDureeMillis != null && nouvelleDureeMillis > 0) {
                 heureFinCalc = Date(nouvelleHeureDebut.time + nouvelleDureeMillis)
             } else {
-                // Si ni heureFin valide ni durée valide, on efface les deux pour éviter incohérence
                 heureFinCalc = null
                 dureeCalc = null
             }
 
             val updatedIntervention = interventionExistante.copy(
-                dateIntervention = nouvelleHeureDebut, // Mettre à jour l'ancienne dateIntervention aussi
+                dateIntervention = nouvelleHeureDebut,
                 heureDebut = nouvelleHeureDebut,
                 heureFin = heureFinCalc,
                 dureeEffective = dureeCalc,
-                statutIntervention = if (heureFinCalc != null) InterventionStatus.COMPLETED.name else interventionExistante.statutIntervention // Si pas de fin, garde le statut
+                statutIntervention = if (heureFinCalc != null) InterventionStatus.COMPLETED.name else interventionExistante.statutIntervention
             )
             repository.updateIntervention(updatedIntervention)
         }
@@ -527,13 +464,7 @@ class ChantierViewModel(
 
     fun marquerDesherbagePlanifieEffectue(planificationId: Long, dateEffectiveIntervention: Date, notesIntervention: String?) {
         viewModelScope.launch {
-            val chantierId = selectedChantier.value?.id ?: return@launch
-            // On ne crée plus automatiquement une intervention ici. L'utilisateur doit démarrer/arrêter ou enregistrer manuellement.
-            // On marque juste la planification comme faite.
             repository.markDesherbagePlanifieAsDone(planificationId)
-            // Si on veut lier, il faudrait que l'enregistrement de l'intervention de désherbage permette de sélectionner une planification.
-            // Pour l'instant, on simplifie: marquer comme fait est une action séparée de l'enregistrement de l'intervention de désherbage.
-            // L'utilisateur peut enregistrer une intervention de désherbage manuellement ou avec le chrono et y mettre une note faisant référence à la planification.
         }
     }
 
@@ -555,15 +486,11 @@ class ChantierViewModel(
         when (item) {
             is Intervention -> {
                 titre = "${item.typeIntervention} - $chantierNom"
-                // Utiliser heureDebut si disponible, sinon dateIntervention (qui est heureDebut)
                 dateDebutMillis = item.heureDebut?.time ?: item.dateIntervention.time
-
-                // Si heureFin est disponible, l'utiliser. Sinon, ajouter 1h par défaut à heureDebut.
                 dateFinMillis = item.heureFin?.time ?: (dateDebutMillis + TimeUnit.HOURS.toMillis(1))
-
                 description += "\nType: ${item.typeIntervention}"
                 if (item.dureeEffective != null) {
-                    description += "\nDurée: ${formaterDuree(item.dureeEffective!!)}"
+                    description += "\nDurée: ${ChronomailleurService.formatDuration(item.dureeEffective!!)}"
                 }
                 if (!item.notes.isNullOrBlank()) {
                     description += "\nNotes: ${item.notes}"
@@ -574,7 +501,7 @@ class ChantierViewModel(
             is DesherbagePlanifie -> {
                 titre = "Désherbage Planifié - $chantierNom"
                 dateDebutMillis = item.datePlanifiee.time
-                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1) // Par défaut 1h
+                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1)
                 description += "\nType: Désherbage Planifié"
                 if (!item.notesPlanification.isNullOrBlank()) {
                     description += "\nNotes de planification: ${item.notesPlanification}"

@@ -1,9 +1,16 @@
 package com.example.suivichantierspaysagiste
 
+import android.Manifest
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -23,10 +30,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -66,7 +76,7 @@ private val DarkColorScheme = darkColorScheme(
     onTertiary = Color.Black,
     onBackground = Color.White,
     onSurface = Color.White,
-    primaryContainer = ModernColors.barBackground,
+    primaryContainer = ModernColors.barBackground, // Utilisé pour la carte du chrono
     onPrimaryContainer = ModernColors.selectedContent
 )
 
@@ -81,7 +91,7 @@ private val LightColorScheme = lightColorScheme(
     onTertiary = Color.Black,
     onBackground = Color.Black,
     onSurface = Color.Black,
-    primaryContainer = ModernColors.barBackground,
+    primaryContainer = ModernColors.barBackground, // Utilisé pour la carte du chrono
     onPrimaryContainer = ModernColors.selectedContent
 )
 
@@ -98,8 +108,41 @@ class MainActivity : ComponentActivity() {
         SettingsViewModelFactory(application)
     }
 
+    // Lanceur pour la permission de notification
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                // La permission est accordée.
+            } else {
+                // L'utilisateur a refusé la permission.
+                // Vous pouvez afficher un message expliquant pourquoi la permission est nécessaire.
+            }
+        }
+
+    private fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                // La permission est déjà accordée
+            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                // Afficher une UI expliquant pourquoi la permission est utile
+                // puis appeler requestPermissionLauncher.launch(...)
+                // Pour l'instant, on demande directement :
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                // Demander directement la permission
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createNotificationChannelForChronoService(this)
+        askNotificationPermission() // Demander la permission au démarrage
+
         setContent {
             val useDarkTheme by settingsViewModel.isDarkModeEnabled.collectAsStateWithLifecycle()
 
@@ -119,6 +162,22 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun createNotificationChannelForChronoService(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Chronomètre Service Channel"
+            val descriptionText = "Affiche le chronomètre en cours pour une intervention"
+            val importance = NotificationManager.IMPORTANCE_LOW // LOW pour ne pas être trop intrusif
+            val channel = NotificationChannel(ChronomailleurService.NOTIFICATION_CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+                setSound(null, null)
+                enableVibration(false)
+            }
+            val notificationManager: NotificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,6 +187,20 @@ fun AppNavigation(
     settingsViewModel: SettingsViewModel
 ) {
     val navController: NavHostController = rememberNavController()
+    val context = LocalContext.current // Pour demander la permission
+
+    // Demander la permission de notification si ce n'est pas déjà fait
+    // (Bien que ce soit mieux dans onCreate de l'Activity pour un seul appel)
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                // La logique de demande de permission est dans MainActivity.onCreate maintenant.
+                // On pourrait ajouter un rappel ici si l'utilisateur navigue vers un écran qui en a besoin
+                // et qu'elle n'a pas été accordée.
+            }
+        }
+    }
+
 
     val bottomNavItems = listOf(
         BottomNavItem.Chantiers,
@@ -155,27 +228,23 @@ fun AppNavigation(
                         onClick = {
                             val targetRoute = screen.route
                             if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE) {
-                                // Si on clique sur l'onglet "Chantiers"
-                                chantierViewModel.clearSelectedChantierId() // Toujours effacer l'ID sélectionné
-                                // Si nous ne sommes pas déjà sur la liste des chantiers (par exemple, sur une fiche détail ou un autre onglet)
-                                // Ou si nous sommes sur la liste mais voulons "rafraîchir" (bien que ce soit géré par clearSelectedChantierId)
+                                chantierViewModel.clearSelectedChantierId()
                                 if (currentDestination?.route != ScreenDestinations.CHANTIER_LIST_ROUTE || currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
                                     navController.navigate(targetRoute) {
                                         popUpTo(navController.graph.findStartDestination().id) {
-                                            inclusive = true // Efface toute la pile arrière pour cet onglet, y compris la fiche détail
+                                            inclusive = true
                                         }
-                                        launchSingleTop = true // Assure une seule instance de la liste des chantiers
+                                        launchSingleTop = true
                                     }
                                 }
                             } else {
-                                // Pour les autres onglets (Tontes, Tailles, Désherbage, Réglages)
                                 if (currentDestination?.route != targetRoute) {
                                     navController.navigate(targetRoute) {
                                         popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true // Sauvegarde l'état des autres onglets
+                                            saveState = true
                                         }
                                         launchSingleTop = true
-                                        restoreState = true // Restaure l'état en revenant sur l'onglet
+                                        restoreState = true
                                     }
                                 }
                             }
@@ -212,7 +281,7 @@ fun AppNavigation(
                         navController = navController
                     )
                 } else {
-                    Text("Erreur: Chantier ID manquant")
+                    Text("Erreur: Chantier ID manquant") // Devrait être géré plus élégamment
                 }
             }
             composable(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE) {

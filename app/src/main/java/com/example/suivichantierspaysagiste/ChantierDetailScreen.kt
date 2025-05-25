@@ -2,7 +2,8 @@ package com.example.suivichantierspaysagiste
 
 import android.app.TimePickerDialog
 import android.content.Context
-import android.widget.Toast // Added import for Toast
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -39,11 +40,14 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 
+// Assurez-vous que ServiceActivationRow est défini UNE SEULE FOIS dans votre projet
+// (par exemple, dans ChantierScreen.kt ou un fichier commun de Composables)
+// et importez-le ici si ce fichier est dans un package différent.
+// import com.example.suivichantierspaysagiste.ServiceActivationRow // Exemple d'import si nécessaire
+
 @OptIn(ExperimentalMaterial3Api::class)
 private object NoFutureDatesSelectableDates : SelectableDates {
     override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-        // Permet de sélectionner aujourd'hui et les dates passées.
-        // Ajoute une petite marge pour les fuseaux horaires (ex: 1 jour)
         return utcTimeMillis <= System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1)
     }
 
@@ -72,13 +76,13 @@ fun ChantierDetailScreen(
 ) {
     LaunchedEffect(key1 = chantierId) {
         viewModel.loadChantierById(chantierId)
+        Log.d("ChantierDetailScreen", "Chargement du chantier ID: $chantierId")
     }
 
     val chantier by viewModel.selectedChantier.collectAsStateWithLifecycle()
     val interventions by viewModel.interventionsDuChantier.collectAsStateWithLifecycle()
     val desherbagesPlanifies by viewModel.desherbagesPlanifiesDuChantier.collectAsStateWithLifecycle()
 
-    // Infos spécifiques par type d'intervention
     val derniereTonte by viewModel.derniereTonte.collectAsStateWithLifecycle()
     val nombreTotalTontes by viewModel.nombreTotalTontes.collectAsStateWithLifecycle()
     val tonteUrgencyColor by viewModel.selectedChantierTonteUrgencyColor.collectAsStateWithLifecycle()
@@ -92,8 +96,9 @@ fun ChantierDetailScreen(
     val desherbageUrgencyColor by viewModel.selectedChantierDesherbageUrgencyColor.collectAsStateWithLifecycle()
     val nombreTotalDesherbagesEffectues by viewModel.nombreTotalDesherbagesEffectues.collectAsStateWithLifecycle()
 
-    // Chronomètre
-    val interventionEnCoursUi by viewModel.interventionEnCoursUi.collectAsStateWithLifecycle()
+    val interventionEnCoursUiState by viewModel.interventionEnCoursUi.collectAsStateWithLifecycle()
+    Log.d("ChantierDetailScreen", "interventionEnCoursUiState: $interventionEnCoursUiState")
+
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
     val dateTimeFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
@@ -103,14 +108,13 @@ fun ChantierDetailScreen(
     var showDeleteChantierConfirmDialog by remember { mutableStateOf(false) }
     var interventionASupprimer by remember { mutableStateOf<Intervention?>(null) }
 
-    // Pour l'enregistrement manuel ou la modification de temps
     var showEnregistrerManuellementDialog by remember { mutableStateOf(false) }
     var typeInterventionPourManuel by remember { mutableStateOf("") }
-    var interventionAModifierTemps by remember { mutableStateOf<Intervention?>(null) } // Pour modifier une intervention existante
+    var interventionAModifierTemps by remember { mutableStateOf<Intervention?>(null) }
 
-    // Pour la saisie de notes après avoir terminé une intervention chronométrée
     var showSaisieNotesDialog by remember { mutableStateOf(false) }
     var notesPourInterventionTerminee by remember { mutableStateOf("") }
+
 
     var interventionAModifierNoteExplicite by remember { mutableStateOf<Intervention?>(null) }
     var showEditNoteExpliciteDialog by remember { mutableStateOf(false) }
@@ -134,20 +138,19 @@ fun ChantierDetailScreen(
         } else {
             val currentChantier = chantier!!
 
-            // Affichage de l'intervention en cours (si elle existe pour CE chantier)
-            interventionEnCoursUi?.let { enCoursUi ->
-                if (enCoursUi.intervention.chantierId == currentChantier.id) {
+            interventionEnCoursUiState?.let { enCoursUi ->
+                if (enCoursUi.chantierId == currentChantier.id) {
                     InterventionEnCoursCard(
                         interventionEnCoursUi = enCoursUi,
                         onTerminerClick = {
-                            notesPourInterventionTerminee = enCoursUi.intervention.notes ?: ""
+                            notesPourInterventionTerminee = ""
                             showSaisieNotesDialog = true
                         }
                     )
                 }
             }
 
-            // Infos Chantier et boutons d'édition/suppression
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -174,21 +177,21 @@ fun ChantierDetailScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Section Tonte
             if (currentChantier.serviceTonteActive) {
-                ServiceSection(
+                ServiceSectionChrono(
                     titre = "Suivi des Tontes",
                     derniereInterventionDate = derniereTonte?.dateIntervention,
                     nombreTotalInterventions = nombreTotalTontes,
                     urgencyColor = tonteUrgencyColor,
                     typeIntervention = "Tonte de pelouse",
                     chantierId = currentChantier.id,
+                    chantierNom = currentChantier.nomClient,
                     viewModel = viewModel,
-                    interventionEnCours = interventionEnCoursUi?.intervention,
-                    onDemarrerClick = { viewModel.demarrerIntervention(currentChantier.id, "Tonte de pelouse") },
+                    interventionEnCoursGlobale = interventionEnCoursUiState,
+                    onDemarrerClick = { viewModel.demarrerInterventionChrono(currentChantier.id, "Tonte de pelouse", currentChantier.nomClient) },
                     onEnregistrerManuelClick = {
                         typeInterventionPourManuel = "Tonte de pelouse"
-                        interventionAModifierTemps = null // Assure que c'est pour une nouvelle intervention
+                        interventionAModifierTemps = null
                         showEnregistrerManuellementDialog = true
                     },
                     dateTimeFormat = dateTimeFormat
@@ -196,9 +199,8 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Section Taille
             if (currentChantier.serviceTailleActive) {
-                ServiceSection(
+                ServiceSectionChrono(
                     titre = "Suivi des Tailles de Haie",
                     derniereInterventionDate = derniereTaille?.dateIntervention,
                     nombreTotalInterventions = nombreTotalTailles,
@@ -206,9 +208,10 @@ fun ChantierDetailScreen(
                     urgencyColor = tailleUrgencyColor,
                     typeIntervention = "Taille de haie",
                     chantierId = currentChantier.id,
+                    chantierNom = currentChantier.nomClient,
                     viewModel = viewModel,
-                    interventionEnCours = interventionEnCoursUi?.intervention,
-                    onDemarrerClick = { viewModel.demarrerIntervention(currentChantier.id, "Taille de haie") },
+                    interventionEnCoursGlobale = interventionEnCoursUiState,
+                    onDemarrerClick = { viewModel.demarrerInterventionChrono(currentChantier.id, "Taille de haie", currentChantier.nomClient) },
                     onEnregistrerManuelClick = {
                         typeInterventionPourManuel = "Taille de haie"
                         interventionAModifierTemps = null
@@ -219,7 +222,6 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Section Désherbage
             if (currentChantier.serviceDesherbageActive) {
                 ServiceSectionHeader("Suivi du Désherbage")
                 InfoLine("Prochain désherbage planifié:", prochainDesherbagePlanifie?.datePlanifiee?.let { dateFormat.format(it) } ?: "Aucun planifié", desherbageUrgencyColor)
@@ -227,9 +229,9 @@ fun ChantierDetailScreen(
 
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { viewModel.demarrerIntervention(currentChantier.id, "Désherbage") },
+                        onClick = { viewModel.demarrerInterventionChrono(currentChantier.id, "Désherbage", currentChantier.nomClient) },
                         modifier = Modifier.weight(1f),
-                        enabled = interventionEnCoursUi == null
+                        enabled = interventionEnCoursUiState == null
                     ) { Text("Démarrer Désherbage") }
                     OutlinedButton(
                         onClick = {
@@ -256,7 +258,7 @@ fun ChantierDetailScreen(
                             dateFormat = dateFormat,
                             onMarkAsDone = {
                                 viewModel.marquerDesherbagePlanifieEffectue(planif.id, Date(), planif.notesPlanification)
-                                Toast.makeText(context, "Planification marquée comme effectuée. N'oubliez pas d'enregistrer l'intervention de désherbage.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Planification marquée comme effectuée. N'oubliez pas d'enregistrer l'intervention de désherbage si nécessaire.", Toast.LENGTH_LONG).show()
                             },
                             onEdit = { desherbagePlanifieAModifier = planif; showPlanifierDesherbageDialog = true },
                             onDelete = { desherbagePlanifieASupprimerId = planif.id },
@@ -274,7 +276,6 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Historique des Interventions
             Text("Historique des Interventions :", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             if (interventions.isEmpty()) {
@@ -305,7 +306,6 @@ fun ChantierDetailScreen(
         }
     }
 
-    // Dialogues
     if (showEditChantierDialog && chantier != null) {
         EditChantierDialog(
             chantierInitial = chantier!!,
@@ -334,7 +334,7 @@ fun ChantierDetailScreen(
         val interventionPourDialogue = interventionASupprimer!!
         ConfirmDeleteDialog(
             title = "Confirmer la suppression",
-            text = "Êtes-vous sûr de vouloir supprimer l'intervention : ${interventionPourDialogue.typeIntervention} du ${dateTimeFormat.format(interventionPourDialogue.dateIntervention)} ?",
+            text = "Êtes-vous sûr de vouloir supprimer l'intervention : ${interventionPourDialogue.typeIntervention} du ${interventionPourDialogue.dateIntervention.let { dateTimeFormat.format(it) }} ?",
             onConfirm = {
                 viewModel.deleteIntervention(interventionPourDialogue)
                 interventionASupprimer = null
@@ -355,16 +355,18 @@ fun ChantierDetailScreen(
         )
     }
 
-    if (showSaisieNotesDialog && interventionEnCoursUi != null) {
-        val interventionTermineeParChrono = interventionEnCoursUi!!.intervention // Renamed for clarity
+    if (showSaisieNotesDialog) {
         SaisieNotesInterventionDialog(
-            notesInitiales = interventionTermineeParChrono.notes ?: "",
+            notesInitiales = notesPourInterventionTerminee,
             onDismissRequest = {
-                viewModel.terminerInterventionEnCours(interventionTermineeParChrono.notes)
+                // Si l'utilisateur annule la saisie de notes, on termine quand même l'intervention,
+                // potentiellement avec les notes initiales (qui sont "" ici) ou null.
+                viewModel.terminerInterventionChrono(notesPourInterventionTerminee.ifBlank { null })
                 showSaisieNotesDialog = false
             },
-            onConfirm = { notes ->
-                viewModel.terminerInterventionEnCours(notes)
+            onConfirm = { notesSaisies -> // notesSaisies est de type String? ici
+                // CORRECTION APPLIQUÉE ICI : on passe notesSaisies directement
+                viewModel.terminerInterventionChrono(notesSaisies)
                 showSaisieNotesDialog = false
             }
         )
@@ -426,7 +428,7 @@ fun ChantierDetailScreen(
 }
 
 @Composable
-fun ServiceSection(
+fun ServiceSectionChrono(
     titre: String,
     derniereInterventionDate: Date?,
     nombreTotalInterventions: Int,
@@ -434,13 +436,16 @@ fun ServiceSection(
     urgencyColor: Color,
     typeIntervention: String,
     chantierId: Long,
+    chantierNom: String,
     viewModel: ChantierViewModel,
-    interventionEnCours: Intervention?,
+    interventionEnCoursGlobale: InterventionEnCoursUi?,
     onDemarrerClick: () -> Unit,
     onEnregistrerManuelClick: () -> Unit,
     dateTimeFormat: SimpleDateFormat
 ) {
-    val estEnCoursPourCeTypeEtChantier = interventionEnCours?.typeIntervention == typeIntervention && interventionEnCours.chantierId == chantierId
+    val estEnCoursPourCeTypeEtChantier = interventionEnCoursGlobale?.let {
+        it.chantierId == chantierId && it.typeIntervention == typeIntervention
+    } ?: false
 
     ServiceSectionHeader(titre)
     InfoLine(
@@ -456,7 +461,7 @@ fun ServiceSection(
             Button(
                 onClick = onDemarrerClick,
                 modifier = Modifier.weight(1f),
-                enabled = interventionEnCours == null
+                enabled = interventionEnCoursGlobale == null
             ) { Text("Démarrer") }
             OutlinedButton(
                 onClick = onEnregistrerManuelClick,
@@ -488,12 +493,14 @@ fun InterventionEnCoursCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "${interventionEnCoursUi.typeInterventionLisible} en cours",
-                    style = MaterialTheme.typography.titleMedium
+                    "${interventionEnCoursUi.typeInterventionLisible} sur \"${interventionEnCoursUi.nomChantier}\" en cours",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
                     "Temps écoulé: ${interventionEnCoursUi.dureeEcouleeFormattee}",
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
             Button(
@@ -535,20 +542,22 @@ fun InterventionHistoriqueItem(
             )
             if (intervention.heureFin != null && intervention.dureeEffective != null) {
                 Text(
-                    "Terminée à: ${timeFormat.format(intervention.heureFin!!)}, Durée: ${formatDuration(intervention.dureeEffective!!)}",
+                    "Terminée à: ${timeFormat.format(intervention.heureFin!!)}, Durée: ${ChronomailleurService.formatDuration(intervention.dureeEffective!!)}",
                     style = MaterialTheme.typography.bodySmall
                 )
             } else if (intervention.statutIntervention == InterventionStatus.IN_PROGRESS.name) {
                 Text("En cours...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
 
-            if (!intervention.notes.isNullOrBlank()) {
-                Text(
-                    "Notes: ${intervention.notes}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontStyle = FontStyle.Italic,
-                    modifier = Modifier.padding(start = 8.dp, top = 2.dp)
-                )
+            intervention.notes?.let { notes ->
+                if (notes.isNotBlank()) {
+                    Text(
+                        "Notes: $notes",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                    )
+                }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -585,15 +594,6 @@ fun InterventionHistoriqueItem(
     }
 }
 
-fun formatDuration(millis: Long): String {
-    val hours = TimeUnit.MILLISECONDS.toHours(millis)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
-    var result = ""
-    if (hours > 0) result += "${hours}h "
-    result += "${minutes}min"
-    return result.ifEmpty { "0min" }
-}
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -617,13 +617,13 @@ fun EnregistrerTempsManuellementDialog(
     var notes by remember { mutableStateOf(interventionExistante?.notes ?: "") }
 
     var dureeHeures by remember { mutableStateOf(
-        interventionExistante?.dureeEffective?.let { TimeUnit.MILLISECONDS.toHours(it).toString() } ?: "1" // Default to 1h if new
+        interventionExistante?.dureeEffective?.let { TimeUnit.MILLISECONDS.toHours(it).toString() } ?: "1"
     )}
     var dureeMinutes by remember { mutableStateOf(
         interventionExistante?.dureeEffective?.let { (TimeUnit.MILLISECONDS.toMinutes(it) % 60).toString() } ?: "0"
     )}
 
-    var tabIndex by remember { mutableStateOf(0) } // 0 for Heure Fin, 1 for Durée
+    var tabIndex by remember { mutableStateOf(0) }
 
     LaunchedEffect(interventionExistante) {
         interventionExistante?.let {
@@ -632,29 +632,26 @@ fun EnregistrerTempsManuellementDialog(
             it.heureFin?.let { hf ->
                 dateFinState = hf
                 heureFinState = hf
-                tabIndex = 0 // Prefer Heure Fin if available
+                tabIndex = 0
             } ?: run {
-                // If no heureFin, calculate from dureeEffective or default
                 val defaultFin = Date(dateDebut.time + TimeUnit.HOURS.toMillis(1))
                 dateFinState = defaultFin
                 heureFinState = defaultFin
                 it.dureeEffective?.let { de ->
-                    if (de > 0) tabIndex = 1 // Prefer Durée if heureFin was null but duree was set
+                    if (de > 0) tabIndex = 1
                 }
-
             }
             notes = it.notes ?: ""
             it.dureeEffective?.let { de ->
                 dureeHeures = TimeUnit.MILLISECONDS.toHours(de).toString()
                 dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(de) % 60).toString()
             } ?: run {
-                // if no duree, and no heureFin, calculate default 1h for display in Duree fields
                 if(it.heureFin == null){
                     dureeHeures = "1"
                     dureeMinutes = "0"
                 }
             }
-        } ?: run { // New intervention defaults
+        } ?: run {
             val now = Date()
             dateDebut = now
             heureDebut = now
@@ -664,10 +661,9 @@ fun EnregistrerTempsManuellementDialog(
             dureeHeures = "1"
             dureeMinutes = "0"
             notes = ""
-            tabIndex = 0 // Default to Heure Fin tab
+            tabIndex = 0
         }
     }
-
 
     fun getCombinedDateTime(datePart: Date, timePart: Date): Date {
         val dateCalendar = Calendar.getInstance().apply { time = datePart }
@@ -684,28 +680,25 @@ fun EnregistrerTempsManuellementDialog(
     }
 
     LaunchedEffect(tabIndex, dateDebut, heureDebut, dateFinState, heureFinState) {
-        if (tabIndex == 0) { // Heure Fin is active
+        if (tabIndex == 0) {
             val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
             val combinedFin = getCombinedDateTime(dateFinState, heureFinState)
             if (combinedFin.after(combinedDebut)) {
                 val diff = combinedFin.time - combinedDebut.time
                 dureeHeures = TimeUnit.MILLISECONDS.toHours(diff).toString()
                 dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(diff) % 60).toString()
-            } else {
-                //dureeHeures = "0"
-                //dureeMinutes = "0"
             }
         }
     }
 
     LaunchedEffect(tabIndex, dateDebut, heureDebut, dureeHeures, dureeMinutes) {
-        if (tabIndex == 1) { // Durée is active
+        if (tabIndex == 1) {
             val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
             val h = dureeHeures.toLongOrNull() ?: 0
             val m = dureeMinutes.toLongOrNull() ?: 0
             if (h >= 0 && m >= 0 && m < 60) {
                 val dureeMillis = TimeUnit.HOURS.toMillis(h) + TimeUnit.MINUTES.toMillis(m)
-                if (dureeMillis >= 0) { // Allow 0 duration
+                if (dureeMillis >= 0) {
                     val calFin = Calendar.getInstance().apply { time = combinedDebut }
                     calFin.add(Calendar.MILLISECOND, dureeMillis.toInt())
                     dateFinState = calFin.time
@@ -714,7 +707,6 @@ fun EnregistrerTempsManuellementDialog(
             }
         }
     }
-
 
     var showDatePickerDebut by remember { mutableStateOf(false) }
     val datePickerStateDebut = rememberDatePickerState(
@@ -765,7 +757,7 @@ fun EnregistrerTempsManuellementDialog(
                 }
 
                 when (tabIndex) {
-                    0 -> { // Heure Fin
+                    0 -> {
                         Text("Fin", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedButton(onClick = { showDatePickerFin = true }, modifier = Modifier.weight(1f)) {
@@ -785,7 +777,7 @@ fun EnregistrerTempsManuellementDialog(
                             }
                         }
                     }
-                    1 -> { // Durée
+                    1 -> {
                         Text("Durée", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
@@ -811,15 +803,12 @@ fun EnregistrerTempsManuellementDialog(
                     Text("L'heure de fin doit être après l'heure de début.", color = MaterialTheme.colorScheme.error)
                 }
 
-
                 if (showDatePickerDebut) {
                     DatePickerDialog(
                         onDismissRequest = { showDatePickerDebut = false },
                         confirmButton = {
                             TextButton(onClick = {
-                                datePickerStateDebut.selectedDateMillis?.let {
-                                    dateDebut = Date(it)
-                                }
+                                datePickerStateDebut.selectedDateMillis?.let { dateDebut = Date(it) }
                                 showDatePickerDebut = false
                             }) { Text("OK") }
                         },
@@ -831,9 +820,7 @@ fun EnregistrerTempsManuellementDialog(
                         onDismissRequest = { showDatePickerFin = false },
                         confirmButton = {
                             TextButton(onClick = {
-                                datePickerStateFin.selectedDateMillis?.let {
-                                    dateFinState = Date(it)
-                                }
+                                datePickerStateFin.selectedDateMillis?.let { dateFinState = Date(it) }
                                 showDatePickerFin = false
                             }) { Text("OK") }
                         },
@@ -858,7 +845,7 @@ fun EnregistrerTempsManuellementDialog(
                             var finalFin: Date? = null
                             var finalDuree: Long? = null
 
-                            if (tabIndex == 0) { // Heure Fin active
+                            if (tabIndex == 0) {
                                 val tempFinalFin = getCombinedDateTime(dateFinState, heureFinState)
                                 if (tempFinalFin.after(finalDebut)) {
                                     finalFin = tempFinalFin
@@ -867,7 +854,7 @@ fun EnregistrerTempsManuellementDialog(
                                     Toast.makeText(context, "L'heure de fin doit être après l'heure de début.", Toast.LENGTH_LONG).show()
                                     return@Button
                                 }
-                            } else { // Durée active
+                            } else {
                                 val h = dureeHeures.toLongOrNull() ?: 0
                                 val m = dureeMinutes.toLongOrNull() ?: 0
                                 if (h < 0 || m < 0 || m >= 60) {
@@ -886,7 +873,6 @@ fun EnregistrerTempsManuellementDialog(
                                 Toast.makeText(context, "La durée calculée est négative. Vérifiez les heures.", Toast.LENGTH_LONG).show()
                                 return@Button
                             }
-
                             onConfirm(finalDebut, finalFin, finalDuree, notes.ifBlank { null })
                         }
                     ) { Text(if (interventionExistante == null) "Enregistrer" else "Modifier") }
@@ -966,9 +952,14 @@ fun EditChantierDialog(
                 Text("Modifier le chantier", style = MaterialTheme.typography.titleLarge)
                 OutlinedTextField(value = nomClient, onValueChange = { nomClient = it }, label = { Text("Nom du client / Chantier") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = adresse, onValueChange = { adresse = it }, label = { Text("Adresse (optionnel)") }, modifier = Modifier.fillMaxWidth())
+
+                // Les appels à ServiceActivationRow sont rétablis.
+                // Assurez-vous que ServiceActivationRow est défini UNE SEULE FOIS dans votre projet
+                // et est accessible ici (par exemple, via un import si nécessaire depuis ChantierScreen.kt ou un fichier commun).
                 ServiceActivationRow(label = "Suivi des Tontes Actif", checked = tonteActive, onCheckedChange = { tonteActive = it })
                 ServiceActivationRow(label = "Suivi des Tailles Actif", checked = tailleActive, onCheckedChange = { tailleActive = it })
                 ServiceActivationRow(label = "Suivi Désherbage Actif", checked = desherbageActive, onCheckedChange = { desherbageActive = it })
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismissRequest) { Text("Annuler") }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1097,12 +1088,6 @@ fun PlanifierDesherbageDialog(
     }
 }
 
-// Removed the local definition of ServiceActivationRow to resolve ambiguity.
-// Ensure it's defined once elsewhere (e.g., ChantierScreen.kt or a shared utils file)
-// and imported here if needed by EditChantierDialog.
-// @Composable
-// fun ServiceActivationRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) { ... }
-
 @Composable
 fun DesherbagePlanifieItem(
     planification: DesherbagePlanifie,
@@ -1136,9 +1121,9 @@ fun DesherbagePlanifieItem(
             if (planification.estEffectue) {
                 Text("Effectué", style = MaterialTheme.typography.labelSmall, color = Color.Green.copy(alpha = 0.8f))
             }
-            planification.notesPlanification?.let {
-                if (it.isNotBlank()) {
-                    Text("Notes planif.: $it", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = itemColor.copy(alpha = 0.8f))
+            planification.notesPlanification?.let { notes ->
+                if (notes.isNotBlank()) {
+                    Text("Notes planif.: $notes", style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic), color = itemColor.copy(alpha = 0.8f))
                 }
             }
         }
