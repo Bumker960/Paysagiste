@@ -35,8 +35,9 @@ class ChantierRepository(
         return interventionDao.getInterventionsForChantier(chantierId)
     }
 
-    suspend fun insertIntervention(intervention: Intervention) {
-        interventionDao.insertIntervention(intervention)
+    // Modifié pour retourner l'ID, utile pour récupérer l'intervention après insertion si besoin
+    suspend fun insertIntervention(intervention: Intervention): Long {
+        return interventionDao.insertIntervention(intervention)
     }
 
     suspend fun updateIntervention(intervention: Intervention) {
@@ -68,7 +69,6 @@ class ChantierRepository(
         return interventionDao.getInterventionById(interventionId)
     }
 
-    // NOUVELLE FONCTION pour marquer une intervention comme exportée/non exportée
     suspend fun marquerInterventionExportee(interventionId: Long, estExportee: Boolean) {
         val intervention = interventionDao.getInterventionById(interventionId)
         intervention?.let {
@@ -84,7 +84,7 @@ class ChantierRepository(
         return chantierDao.getTaillesPrioritairesInfoFlow(startOfYearTimestamp, endOfYearTimestamp)
     }
 
-    // --- Fonctions pour DesherbagePlanifie ---
+    // --- Fonctions pour DesherbagePlanifie (inchangées pour l'instant au niveau du repo) ---
     fun getDesherbagesPlanifiesForChantier(chantierId: Long): Flow<List<DesherbagePlanifie>> {
         return desherbagePlanifieDao.getDesherbagesPlanifiesForChantier(chantierId)
     }
@@ -97,7 +97,7 @@ class ChantierRepository(
         desherbagePlanifieDao.update(desherbagePlanifie)
     }
 
-    suspend fun deleteDesherbagePlanifie(desherbagePlanifie: DesherbagePlanifie) { // Conserve cette méthode si utilisée ailleurs
+    suspend fun deleteDesherbagePlanifie(desherbagePlanifie: DesherbagePlanifie) {
         desherbagePlanifieDao.delete(desherbagePlanifie)
     }
 
@@ -125,11 +125,15 @@ class ChantierRepository(
         return desherbagePlanifieDao.countDesherbagesPlanifiesForDate(chantierId, date)
     }
 
-    // NOUVELLE FONCTION pour marquer une planification de désherbage comme exportée/non exportée
     suspend fun marquerDesherbagePlanifieExportee(planificationId: Long, estExportee: Boolean) {
         val planification = desherbagePlanifieDao.getDesherbagePlanifieById(planificationId)
         planification?.let {
             desherbagePlanifieDao.update(it.copy(exporteAgenda = estExportee))
         }
+    }
+
+    // NOUVELLE FONCTION pour récupérer une intervention en cours
+    suspend fun getInterventionEnCours(chantierId: Long, typeIntervention: String): Intervention? {
+        return interventionDao.getInterventionEnCours(chantierId, typeIntervention)
     }
 }

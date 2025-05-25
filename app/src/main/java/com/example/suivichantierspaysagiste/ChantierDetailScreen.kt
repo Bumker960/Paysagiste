@@ -1,12 +1,16 @@
 package com.example.suivichantierspaysagiste
 
+import android.app.TimePickerDialog
 import android.content.Context
+import android.widget.Toast // Added import for Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime // Pour modifier le temps
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -14,6 +18,10 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.filled.MoreVert // Pour le menu d'édition de temps
+import androidx.compose.material.icons.filled.PauseCircleOutline
+import androidx.compose.material.icons.filled.PlayCircleOutline
+import androidx.compose.material.icons.filled.StopCircle // Pour Terminer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,6 +42,8 @@ import java.util.concurrent.TimeUnit
 @OptIn(ExperimentalMaterial3Api::class)
 private object NoFutureDatesSelectableDates : SelectableDates {
     override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+        // Permet de sélectionner aujourd'hui et les dates passées.
+        // Ajoute une petite marge pour les fuseaux horaires (ex: 1 jour)
         return utcTimeMillis <= System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1)
     }
 
@@ -67,64 +78,48 @@ fun ChantierDetailScreen(
     val interventions by viewModel.interventionsDuChantier.collectAsStateWithLifecycle()
     val desherbagesPlanifies by viewModel.desherbagesPlanifiesDuChantier.collectAsStateWithLifecycle()
 
+    // Infos spécifiques par type d'intervention
     val derniereTonte by viewModel.derniereTonte.collectAsStateWithLifecycle()
     val nombreTotalTontes by viewModel.nombreTotalTontes.collectAsStateWithLifecycle()
     val tonteUrgencyColor by viewModel.selectedChantierTonteUrgencyColor.collectAsStateWithLifecycle()
+
     val derniereTaille by viewModel.derniereTaille.collectAsStateWithLifecycle()
     val nombreTotalTailles by viewModel.nombreTotalTailles.collectAsStateWithLifecycle()
     val nombreTaillesCetteAnnee by viewModel.nombreTaillesCetteAnnee.collectAsStateWithLifecycle()
     val tailleUrgencyColor by viewModel.selectedChantierTailleUrgencyColor.collectAsStateWithLifecycle()
+
     val prochainDesherbagePlanifie by viewModel.prochainDesherbagePlanifie.collectAsStateWithLifecycle()
     val desherbageUrgencyColor by viewModel.selectedChantierDesherbageUrgencyColor.collectAsStateWithLifecycle()
     val nombreTotalDesherbagesEffectues by viewModel.nombreTotalDesherbagesEffectues.collectAsStateWithLifecycle()
 
+    // Chronomètre
+    val interventionEnCoursUi by viewModel.interventionEnCoursUi.collectAsStateWithLifecycle()
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
     val dateTimeFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
+
     var showEditChantierDialog by remember { mutableStateOf(false) }
     var showDeleteChantierConfirmDialog by remember { mutableStateOf(false) }
     var interventionASupprimer by remember { mutableStateOf<Intervention?>(null) }
 
-    var showTonteDatePickerDialog by remember { mutableStateOf(false) }
-    val tonteDatePickerState = rememberDatePickerState(selectableDates = NoFutureDatesSelectableDates)
-    var showTailleDatePickerDialog by remember { mutableStateOf(false) }
-    val tailleDatePickerState = rememberDatePickerState(selectableDates = NoFutureDatesSelectableDates)
-    var showDesherbageInterventionDatePickerDialog by remember { mutableStateOf(false) }
-    val desherbageInterventionDatePickerState = rememberDatePickerState(selectableDates = NoFutureDatesSelectableDates)
+    // Pour l'enregistrement manuel ou la modification de temps
+    var showEnregistrerManuellementDialog by remember { mutableStateOf(false) }
+    var typeInterventionPourManuel by remember { mutableStateOf("") }
+    var interventionAModifierTemps by remember { mutableStateOf<Intervention?>(null) } // Pour modifier une intervention existante
 
-    var interventionTypeForNotes by remember { mutableStateOf<String?>(null) }
-    var selectedDateForNotes by remember { mutableStateOf<Date?>(null) }
-    var currentInterventionNotes by remember { mutableStateOf("") }
-    var planificationLieeIdForNotes by remember { mutableStateOf<Long?>(null) }
+    // Pour la saisie de notes après avoir terminé une intervention chronométrée
+    var showSaisieNotesDialog by remember { mutableStateOf(false) }
+    var notesPourInterventionTerminee by remember { mutableStateOf("") }
 
-    var interventionAModifierNote by remember { mutableStateOf<Intervention?>(null) }
-    var showEditNoteDialog by remember { mutableStateOf(false) }
+    var interventionAModifierNoteExplicite by remember { mutableStateOf<Intervention?>(null) }
+    var showEditNoteExpliciteDialog by remember { mutableStateOf(false) }
 
     var showPlanifierDesherbageDialog by remember { mutableStateOf(false) }
     var desherbagePlanifieAModifier by remember { mutableStateOf<DesherbagePlanifie?>(null) }
     var desherbagePlanifieASupprimerId by remember { mutableStateOf<Long?>(null) }
 
     val context = LocalContext.current
-
-    fun combineDateWithCurrentTime(selectedDateMillisUtc: Long): Date {
-        val selectedDateCalendarUtc = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-        selectedDateCalendarUtc.timeInMillis = selectedDateMillisUtc
-
-        val currentTimeCalendarLocal = Calendar.getInstance()
-
-        val combinedCalendarLocal = Calendar.getInstance()
-        combinedCalendarLocal.set(
-            selectedDateCalendarUtc.get(Calendar.YEAR),
-            selectedDateCalendarUtc.get(Calendar.MONTH),
-            selectedDateCalendarUtc.get(Calendar.DAY_OF_MONTH),
-            currentTimeCalendarLocal.get(Calendar.HOUR_OF_DAY),
-            currentTimeCalendarLocal.get(Calendar.MINUTE),
-            currentTimeCalendarLocal.get(Calendar.SECOND)
-        )
-        combinedCalendarLocal.set(Calendar.MILLISECOND, currentTimeCalendarLocal.get(Calendar.MILLISECOND))
-        return combinedCalendarLocal.time
-    }
-
 
     Column(
         modifier = Modifier
@@ -139,6 +134,20 @@ fun ChantierDetailScreen(
         } else {
             val currentChantier = chantier!!
 
+            // Affichage de l'intervention en cours (si elle existe pour CE chantier)
+            interventionEnCoursUi?.let { enCoursUi ->
+                if (enCoursUi.intervention.chantierId == currentChantier.id) {
+                    InterventionEnCoursCard(
+                        interventionEnCoursUi = enCoursUi,
+                        onTerminerClick = {
+                            notesPourInterventionTerminee = enCoursUi.intervention.notes ?: ""
+                            showSaisieNotesDialog = true
+                        }
+                    )
+                }
+            }
+
+            // Infos Chantier et boutons d'édition/suppression
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -165,90 +174,77 @@ fun ChantierDetailScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Section Tonte
             if (currentChantier.serviceTonteActive) {
-                ServiceSectionHeader("Suivi des Tontes")
-                InfoLine("Dernière tonte:", derniereTonte?.dateIntervention?.let { "${dateTimeFormat.format(it)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - it.time)}j)" } ?: "Aucune", tonteUrgencyColor)
-                InfoLine("Nombre total de tontes:", "$nombreTotalTontes")
-                Button(
-                    onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; showTonteDatePickerDialog = true },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    enabled = interventionTypeForNotes != "Tonte de pelouse"
-                ) { Text("Enregistrer une Tonte") }
-                if (interventionTypeForNotes == "Tonte de pelouse" && selectedDateForNotes != null) {
-                    InterventionNotesInputSection(
-                        interventionType = "Tonte de pelouse",
-                        selectedDate = selectedDateForNotes!!,
-                        notes = currentInterventionNotes,
-                        onNotesChange = { currentInterventionNotes = it },
-                        onConfirm = {
-                            viewModel.ajouterTonte(currentChantier.id, selectedDateForNotes!!, currentInterventionNotes.ifBlank { null })
-                            interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""
-                        },
-                        onCancel = { interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = "" },
-                        dateFormat = dateTimeFormat
-                    )
-                }
+                ServiceSection(
+                    titre = "Suivi des Tontes",
+                    derniereInterventionDate = derniereTonte?.dateIntervention,
+                    nombreTotalInterventions = nombreTotalTontes,
+                    urgencyColor = tonteUrgencyColor,
+                    typeIntervention = "Tonte de pelouse",
+                    chantierId = currentChantier.id,
+                    viewModel = viewModel,
+                    interventionEnCours = interventionEnCoursUi?.intervention,
+                    onDemarrerClick = { viewModel.demarrerIntervention(currentChantier.id, "Tonte de pelouse") },
+                    onEnregistrerManuelClick = {
+                        typeInterventionPourManuel = "Tonte de pelouse"
+                        interventionAModifierTemps = null // Assure que c'est pour une nouvelle intervention
+                        showEnregistrerManuellementDialog = true
+                    },
+                    dateTimeFormat = dateTimeFormat
+                )
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+            // Section Taille
             if (currentChantier.serviceTailleActive) {
-                ServiceSectionHeader("Suivi des Tailles de Haie")
-                InfoLine("Dernière taille:", derniereTaille?.dateIntervention?.let { "${dateTimeFormat.format(it)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - it.time)}j)" } ?: "Aucune", tailleUrgencyColor)
-                InfoLine("Nombre total de tailles:", "$nombreTotalTailles")
-                InfoLine("Tailles cette année:", "$nombreTaillesCetteAnnee / 2")
-                Button(
-                    onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; showTailleDatePickerDialog = true },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    enabled = interventionTypeForNotes != "Taille de haie"
-                ) { Text("Enregistrer une Taille") }
-                if (interventionTypeForNotes == "Taille de haie" && selectedDateForNotes != null) {
-                    InterventionNotesInputSection(
-                        interventionType = "Taille de haie",
-                        selectedDate = selectedDateForNotes!!,
-                        notes = currentInterventionNotes,
-                        onNotesChange = { currentInterventionNotes = it },
-                        onConfirm = {
-                            viewModel.ajouterTailleHaie(currentChantier.id, selectedDateForNotes!!, currentInterventionNotes.ifBlank { null })
-                            interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""
-                        },
-                        onCancel = { interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = "" },
-                        dateFormat = dateTimeFormat
-                    )
-                }
+                ServiceSection(
+                    titre = "Suivi des Tailles de Haie",
+                    derniereInterventionDate = derniereTaille?.dateIntervention,
+                    nombreTotalInterventions = nombreTotalTailles,
+                    infosSupplementaires = "Tailles cette année: $nombreTaillesCetteAnnee / 2",
+                    urgencyColor = tailleUrgencyColor,
+                    typeIntervention = "Taille de haie",
+                    chantierId = currentChantier.id,
+                    viewModel = viewModel,
+                    interventionEnCours = interventionEnCoursUi?.intervention,
+                    onDemarrerClick = { viewModel.demarrerIntervention(currentChantier.id, "Taille de haie") },
+                    onEnregistrerManuelClick = {
+                        typeInterventionPourManuel = "Taille de haie"
+                        interventionAModifierTemps = null
+                        showEnregistrerManuellementDialog = true
+                    },
+                    dateTimeFormat = dateTimeFormat
+                )
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+            // Section Désherbage
             if (currentChantier.serviceDesherbageActive) {
                 ServiceSectionHeader("Suivi du Désherbage")
                 InfoLine("Prochain désherbage planifié:", prochainDesherbagePlanifie?.datePlanifiee?.let { dateFormat.format(it) } ?: "Aucun planifié", desherbageUrgencyColor)
                 InfoLine("Nombre total de désherbages effectués:", "$nombreTotalDesherbagesEffectues")
 
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { viewModel.demarrerIntervention(currentChantier.id, "Désherbage") },
+                        modifier = Modifier.weight(1f),
+                        enabled = interventionEnCoursUi == null
+                    ) { Text("Démarrer Désherbage") }
+                    OutlinedButton(
+                        onClick = {
+                            typeInterventionPourManuel = "Désherbage"
+                            interventionAModifierTemps = null
+                            showEnregistrerManuellementDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Enreg. Manuel Désherbage") }
+                }
+
                 Button(
                     onClick = { showPlanifierDesherbageDialog = true; desherbagePlanifieAModifier = null },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Text("Planifier un Désherbage") }
-
-                Button(
-                    onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; showDesherbageInterventionDatePickerDialog = true },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    enabled = interventionTypeForNotes != "Désherbage"
-                ) { Text("Enregistrer un Désherbage (Intervention)") }
-
-                if (interventionTypeForNotes == "Désherbage" && selectedDateForNotes != null) {
-                    InterventionNotesInputSection(
-                        interventionType = "Désherbage",
-                        selectedDate = selectedDateForNotes!!,
-                        notes = currentInterventionNotes,
-                        onNotesChange = { currentInterventionNotes = it },
-                        onConfirm = {
-                            viewModel.ajouterDesherbageIntervention(currentChantier.id, selectedDateForNotes!!, currentInterventionNotes.ifBlank { null }, planificationLieeIdForNotes)
-                            interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; planificationLieeIdForNotes = null
-                        },
-                        onCancel = { interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; planificationLieeIdForNotes = null},
-                        dateFormat = dateTimeFormat,
-                        planificationLiee = desherbagesPlanifies.find { it.id == planificationLieeIdForNotes }
-                    )
-                }
 
                 Text("Désherbages Planifiés:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
                 if (desherbagesPlanifies.isEmpty()) {
@@ -259,17 +255,12 @@ fun ChantierDetailScreen(
                             planification = planif,
                             dateFormat = dateFormat,
                             onMarkAsDone = {
-                                val datePlanifieeMillis = planif.datePlanifiee.time
-                                selectedDateForNotes = combineDateWithCurrentTime(datePlanifieeMillis)
-                                planificationLieeIdForNotes = planif.id
-                                interventionTypeForNotes = "Désherbage"
-                                currentInterventionNotes = planif.notesPlanification ?: ""
+                                viewModel.marquerDesherbagePlanifieEffectue(planif.id, Date(), planif.notesPlanification)
+                                Toast.makeText(context, "Planification marquée comme effectuée. N'oubliez pas d'enregistrer l'intervention de désherbage.", Toast.LENGTH_LONG).show()
                             },
                             onEdit = { desherbagePlanifieAModifier = planif; showPlanifierDesherbageDialog = true },
                             onDelete = { desherbagePlanifieASupprimerId = planif.id },
-                            onExportToCalendar = {
-                                viewModel.exporterElementVersAgenda(context, planif, currentChantier.nomClient)
-                            }
+                            onExportToCalendar = { viewModel.exporterElementVersAgenda(context, planif, currentChantier.nomClient) }
                         )
                         Divider()
                     }
@@ -283,21 +274,29 @@ fun ChantierDetailScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+            // Historique des Interventions
             Text("Historique des Interventions :", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             if (interventions.isEmpty()) {
                 Text("Aucune intervention enregistrée pour ce chantier.")
             } else {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    interventions.forEach { intervention ->
+                    interventions.filter { it.statutIntervention == InterventionStatus.COMPLETED.name }.forEach { intervention ->
                         InterventionHistoriqueItem(
                             intervention = intervention,
-                            dateFormat = dateTimeFormat,
-                            onEditNote = { interventionAModifierNote = intervention; showEditNoteDialog = true },
+                            dateTimeFormat = dateTimeFormat,
+                            timeFormat = timeFormat,
+                            onEditNote = {
+                                interventionAModifierNoteExplicite = intervention
+                                showEditNoteExpliciteDialog = true
+                            },
+                            onEditTime = {
+                                interventionAModifierTemps = intervention
+                                typeInterventionPourManuel = intervention.typeIntervention
+                                showEnregistrerManuellementDialog = true
+                            },
                             onDelete = { interventionASupprimer = intervention },
-                            onExportToCalendar = {
-                                viewModel.exporterElementVersAgenda(context, intervention, currentChantier.nomClient)
-                            }
+                            onExportToCalendar = { viewModel.exporterElementVersAgenda(context, intervention, currentChantier.nomClient) }
                         )
                         Divider()
                     }
@@ -306,6 +305,7 @@ fun ChantierDetailScreen(
         }
     }
 
+    // Dialogues
     if (showEditChantierDialog && chantier != null) {
         EditChantierDialog(
             chantierInitial = chantier!!,
@@ -343,49 +343,57 @@ fun ChantierDetailScreen(
         )
     }
 
-    if (showEditNoteDialog && interventionAModifierNote != null) {
+    if (showEditNoteExpliciteDialog && interventionAModifierNoteExplicite != null) {
         EditInterventionNoteDialog(
-            intervention = interventionAModifierNote!!,
-            onDismissRequest = { showEditNoteDialog = false; interventionAModifierNote = null },
+            intervention = interventionAModifierNoteExplicite!!,
+            onDismissRequest = { showEditNoteExpliciteDialog = false; interventionAModifierNoteExplicite = null },
             onConfirm = { nouvellesNotes ->
-                viewModel.updateInterventionNotes(interventionAModifierNote!!, nouvellesNotes)
-                showEditNoteDialog = false; interventionAModifierNote = null
+                viewModel.updateInterventionNotes(interventionAModifierNoteExplicite!!, nouvellesNotes)
+                showEditNoteExpliciteDialog = false; interventionAModifierNoteExplicite = null
             },
             dateTimeFormat = dateTimeFormat
         )
     }
 
-    if (showTonteDatePickerDialog) {
-        DatePickerDialogIntervention(
-            state = tonteDatePickerState,
-            onDismiss = { showTonteDatePickerDialog = false },
-            onConfirm = { millis ->
-                selectedDateForNotes = combineDateWithCurrentTime(millis)
-                interventionTypeForNotes = "Tonte de pelouse"; currentInterventionNotes = ""; showTonteDatePickerDialog = false
-            }
-        )
-    }
-    if (showTailleDatePickerDialog) {
-        DatePickerDialogIntervention(
-            state = tailleDatePickerState,
-            onDismiss = { showTailleDatePickerDialog = false },
-            onConfirm = { millis ->
-                selectedDateForNotes = combineDateWithCurrentTime(millis)
-                interventionTypeForNotes = "Taille de haie"; currentInterventionNotes = ""; showTailleDatePickerDialog = false
-            }
-        )
-    }
-    if (showDesherbageInterventionDatePickerDialog) {
-        DatePickerDialogIntervention(
-            state = desherbageInterventionDatePickerState,
-            onDismiss = { showDesherbageInterventionDatePickerDialog = false },
-            onConfirm = { millis ->
-                selectedDateForNotes = combineDateWithCurrentTime(millis)
-                interventionTypeForNotes = "Désherbage"; currentInterventionNotes = ""; showDesherbageInterventionDatePickerDialog = false
+    if (showSaisieNotesDialog && interventionEnCoursUi != null) {
+        val interventionTermineeParChrono = interventionEnCoursUi!!.intervention // Renamed for clarity
+        SaisieNotesInterventionDialog(
+            notesInitiales = interventionTermineeParChrono.notes ?: "",
+            onDismissRequest = {
+                viewModel.terminerInterventionEnCours(interventionTermineeParChrono.notes)
+                showSaisieNotesDialog = false
+            },
+            onConfirm = { notes ->
+                viewModel.terminerInterventionEnCours(notes)
+                showSaisieNotesDialog = false
             }
         )
     }
 
+
+    if (showEnregistrerManuellementDialog && chantier != null) {
+        EnregistrerTempsManuellementDialog(
+            chantierNom = chantier!!.nomClient,
+            typeIntervention = typeInterventionPourManuel,
+            interventionExistante = interventionAModifierTemps,
+            onDismissRequest = {
+                showEnregistrerManuellementDialog = false
+                interventionAModifierTemps = null
+            },
+            onConfirm = { dateDebut, dateFin, dureeMillis, notes ->
+                if (interventionAModifierTemps != null) {
+                    viewModel.modifierTempsIntervention(interventionAModifierTemps!!.id, dateDebut, dateFin, dureeMillis)
+                    if(notes != interventionAModifierTemps!!.notes) {
+                        viewModel.updateInterventionNotes(interventionAModifierTemps!!, notes)
+                    }
+                } else {
+                    viewModel.enregistrerInterventionManuelle(chantier!!.id, typeInterventionPourManuel, dateDebut, dateFin, dureeMillis, notes)
+                }
+                showEnregistrerManuellementDialog = false
+                interventionAModifierTemps = null
+            }
+        )
+    }
 
     if (showPlanifierDesherbageDialog && chantier != null) {
         PlanifierDesherbageDialog(
@@ -417,31 +425,102 @@ fun ChantierDetailScreen(
     }
 }
 
-// --- Définitions des composables qui manquaient ---
 @Composable
-fun ServiceSectionHeader(title: String) {
-    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
-}
+fun ServiceSection(
+    titre: String,
+    derniereInterventionDate: Date?,
+    nombreTotalInterventions: Int,
+    infosSupplementaires: String? = null,
+    urgencyColor: Color,
+    typeIntervention: String,
+    chantierId: Long,
+    viewModel: ChantierViewModel,
+    interventionEnCours: Intervention?,
+    onDemarrerClick: () -> Unit,
+    onEnregistrerManuelClick: () -> Unit,
+    dateTimeFormat: SimpleDateFormat
+) {
+    val estEnCoursPourCeTypeEtChantier = interventionEnCours?.typeIntervention == typeIntervention && interventionEnCours.chantierId == chantierId
 
-@Composable
-fun InfoLine(label: String, value: String, color: Color = LocalContentColor.current) {
-    Row(modifier = Modifier.padding(bottom = 2.dp)) {
-        Text(label, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(value, color = color)
+    ServiceSectionHeader(titre)
+    InfoLine(
+        "Dernière intervention:",
+        derniereInterventionDate?.let { date -> "${dateTimeFormat.format(date)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time)}j)" } ?: "Aucune",
+        urgencyColor
+    )
+    InfoLine("Nombre total d'interventions:", "$nombreTotalInterventions")
+    infosSupplementaires?.let { InfoLine("", it) }
+
+    if (!estEnCoursPourCeTypeEtChantier) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onDemarrerClick,
+                modifier = Modifier.weight(1f),
+                enabled = interventionEnCours == null
+            ) { Text("Démarrer") }
+            OutlinedButton(
+                onClick = onEnregistrerManuelClick,
+                modifier = Modifier.weight(1f)
+            ) { Text("Enreg. Manuel") }
+        }
     }
 }
-// --- Fin des définitions des composables qui manquaient ---
+
+
+@Composable
+fun InterventionEnCoursCard(
+    interventionEnCoursUi: InterventionEnCoursUi,
+    onTerminerClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp),
+        elevation = CardDefaults.cardElevation(4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "${interventionEnCoursUi.typeInterventionLisible} en cours",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    "Temps écoulé: ${interventionEnCoursUi.dureeEcouleeFormattee}",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+            Button(
+                onClick = onTerminerClick,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.Filled.StopCircle, contentDescription = "Terminer")
+                Spacer(Modifier.width(4.dp))
+                Text("Terminer")
+            }
+        }
+    }
+}
 
 
 @Composable
 fun InterventionHistoriqueItem(
     intervention: Intervention,
-    dateFormat: SimpleDateFormat,
+    dateTimeFormat: SimpleDateFormat,
+    timeFormat: SimpleDateFormat,
     onEditNote: () -> Unit,
+    onEditTime: () -> Unit,
     onDelete: () -> Unit,
     onExportToCalendar: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -450,7 +529,19 @@ fun InterventionHistoriqueItem(
         verticalAlignment = Alignment.Top
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("${intervention.typeIntervention} - ${dateFormat.format(intervention.dateIntervention)}")
+            Text(
+                "${intervention.typeIntervention} - ${intervention.heureDebut?.let { dateTimeFormat.format(it) } ?: dateTimeFormat.format(intervention.dateIntervention)}",
+                fontWeight = FontWeight.SemiBold
+            )
+            if (intervention.heureFin != null && intervention.dureeEffective != null) {
+                Text(
+                    "Terminée à: ${timeFormat.format(intervention.heureFin!!)}, Durée: ${formatDuration(intervention.dureeEffective!!)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else if (intervention.statutIntervention == InterventionStatus.IN_PROGRESS.name) {
+                Text("En cours...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+
             if (!intervention.notes.isNullOrBlank()) {
                 Text(
                     "Notes: ${intervention.notes}",
@@ -468,90 +559,387 @@ fun InterventionHistoriqueItem(
                     tint = if (intervention.exporteAgenda) MaterialTheme.colorScheme.primary else LocalContentColor.current
                 )
             }
-            IconButton(onClick = onEditNote, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Edit, contentDescription = "Modifier la note")
-            }
-            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Delete, contentDescription = "Supprimer cette intervention", tint = MaterialTheme.colorScheme.error)
+            Box {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Plus d'options")
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Modifier la note") },
+                        onClick = { onEditNote(); showMenu = false }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Modifier le temps") },
+                        onClick = { onEditTime(); showMenu = false }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Supprimer", color = MaterialTheme.colorScheme.error) },
+                        onClick = { onDelete(); showMenu = false }
+                    )
+                }
             }
         }
     }
 }
 
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DatePickerDialogIntervention(
-    state: DatePickerState,
-    onDismiss: () -> Unit,
-    onConfirm: (Long) -> Unit
-) {
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = { state.selectedDateMillis?.let { onConfirm(it) } }) { Text("OK") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
-    ) { DatePicker(state = state) }
+fun formatDuration(millis: Long): String {
+    val hours = TimeUnit.MILLISECONDS.toHours(millis)
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
+    var result = ""
+    if (hours > 0) result += "${hours}h "
+    result += "${minutes}min"
+    return result.ifEmpty { "0min" }
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InterventionNotesInputSection(
-    interventionType: String,
-    selectedDate: Date,
-    notes: String,
-    onNotesChange: (String) -> Unit,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
-    dateFormat: SimpleDateFormat,
-    planificationLiee: DesherbagePlanifie? = null
+fun EnregistrerTempsManuellementDialog(
+    chantierNom: String,
+    typeIntervention: String,
+    interventionExistante: Intervention?,
+    onDismissRequest: () -> Unit,
+    onConfirm: (dateDebut: Date, dateFin: Date?, dureeMillis: Long?, notes: String?) -> Unit
 ) {
-    val paleColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-    val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = paleColor, contentColor = contentColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                "Enregistrer Intervention: $interventionType",
-                style = MaterialTheme.typography.titleSmall
-            )
-            Text(
-                "Date et heure: ${dateFormat.format(selectedDate)}",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            if (planificationLiee != null) {
-                Text(
-                    "Lié à la planification du: ${SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(planificationLiee.datePlanifiee)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontStyle = FontStyle.Italic
-                )
+    var dateDebut by remember { mutableStateOf(interventionExistante?.heureDebut ?: interventionExistante?.dateIntervention ?: Date()) }
+    var heureDebut by remember { mutableStateOf(interventionExistante?.heureDebut ?: interventionExistante?.dateIntervention ?: Date()) }
+
+    var dateFinState by remember { mutableStateOf(interventionExistante?.heureFin ?: Date(dateDebut.time + TimeUnit.HOURS.toMillis(1))) }
+    var heureFinState by remember { mutableStateOf(interventionExistante?.heureFin ?: Date(dateDebut.time + TimeUnit.HOURS.toMillis(1))) }
+
+    var notes by remember { mutableStateOf(interventionExistante?.notes ?: "") }
+
+    var dureeHeures by remember { mutableStateOf(
+        interventionExistante?.dureeEffective?.let { TimeUnit.MILLISECONDS.toHours(it).toString() } ?: "1" // Default to 1h if new
+    )}
+    var dureeMinutes by remember { mutableStateOf(
+        interventionExistante?.dureeEffective?.let { (TimeUnit.MILLISECONDS.toMinutes(it) % 60).toString() } ?: "0"
+    )}
+
+    var tabIndex by remember { mutableStateOf(0) } // 0 for Heure Fin, 1 for Durée
+
+    LaunchedEffect(interventionExistante) {
+        interventionExistante?.let {
+            dateDebut = it.heureDebut ?: it.dateIntervention
+            heureDebut = it.heureDebut ?: it.dateIntervention
+            it.heureFin?.let { hf ->
+                dateFinState = hf
+                heureFinState = hf
+                tabIndex = 0 // Prefer Heure Fin if available
+            } ?: run {
+                // If no heureFin, calculate from dureeEffective or default
+                val defaultFin = Date(dateDebut.time + TimeUnit.HOURS.toMillis(1))
+                dateFinState = defaultFin
+                heureFinState = defaultFin
+                it.dureeEffective?.let { de ->
+                    if (de > 0) tabIndex = 1 // Prefer Durée if heureFin was null but duree was set
+                }
+
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = notes,
-                onValueChange = onNotesChange,
-                label = { Text("Notes (optionnel)") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = onCancel) { Text("Annuler") }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = onConfirm) { Text("Valider Intervention") }
+            notes = it.notes ?: ""
+            it.dureeEffective?.let { de ->
+                dureeHeures = TimeUnit.MILLISECONDS.toHours(de).toString()
+                dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(de) % 60).toString()
+            } ?: run {
+                // if no duree, and no heureFin, calculate default 1h for display in Duree fields
+                if(it.heureFin == null){
+                    dureeHeures = "1"
+                    dureeMinutes = "0"
+                }
+            }
+        } ?: run { // New intervention defaults
+            val now = Date()
+            dateDebut = now
+            heureDebut = now
+            val defaultEndTime = Date(now.time + TimeUnit.HOURS.toMillis(1))
+            dateFinState = defaultEndTime
+            heureFinState = defaultEndTime
+            dureeHeures = "1"
+            dureeMinutes = "0"
+            notes = ""
+            tabIndex = 0 // Default to Heure Fin tab
+        }
+    }
+
+
+    fun getCombinedDateTime(datePart: Date, timePart: Date): Date {
+        val dateCalendar = Calendar.getInstance().apply { time = datePart }
+        val timeCalendar = Calendar.getInstance().apply { time = timePart }
+        return Calendar.getInstance().apply {
+            set(Calendar.YEAR, dateCalendar.get(Calendar.YEAR))
+            set(Calendar.MONTH, dateCalendar.get(Calendar.MONTH))
+            set(Calendar.DAY_OF_MONTH, dateCalendar.get(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, timeCalendar.get(Calendar.HOUR_OF_DAY))
+            set(Calendar.MINUTE, timeCalendar.get(Calendar.MINUTE))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.time
+    }
+
+    LaunchedEffect(tabIndex, dateDebut, heureDebut, dateFinState, heureFinState) {
+        if (tabIndex == 0) { // Heure Fin is active
+            val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
+            val combinedFin = getCombinedDateTime(dateFinState, heureFinState)
+            if (combinedFin.after(combinedDebut)) {
+                val diff = combinedFin.time - combinedDebut.time
+                dureeHeures = TimeUnit.MILLISECONDS.toHours(diff).toString()
+                dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(diff) % 60).toString()
+            } else {
+                //dureeHeures = "0"
+                //dureeMinutes = "0"
             }
         }
+    }
+
+    LaunchedEffect(tabIndex, dateDebut, heureDebut, dureeHeures, dureeMinutes) {
+        if (tabIndex == 1) { // Durée is active
+            val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
+            val h = dureeHeures.toLongOrNull() ?: 0
+            val m = dureeMinutes.toLongOrNull() ?: 0
+            if (h >= 0 && m >= 0 && m < 60) {
+                val dureeMillis = TimeUnit.HOURS.toMillis(h) + TimeUnit.MINUTES.toMillis(m)
+                if (dureeMillis >= 0) { // Allow 0 duration
+                    val calFin = Calendar.getInstance().apply { time = combinedDebut }
+                    calFin.add(Calendar.MILLISECOND, dureeMillis.toInt())
+                    dateFinState = calFin.time
+                    heureFinState = calFin.time
+                }
+            }
+        }
+    }
+
+
+    var showDatePickerDebut by remember { mutableStateOf(false) }
+    val datePickerStateDebut = rememberDatePickerState(
+        initialSelectedDateMillis = dateDebut.time,
+        selectableDates = NoFutureDatesSelectableDates
+    )
+    var showDatePickerFin by remember { mutableStateOf(false) }
+    val datePickerStateFin = rememberDatePickerState(
+        initialSelectedDateMillis = dateFinState.time,
+        selectableDates = NoFutureDatesSelectableDates
+    )
+
+    Dialog(onDismissRequest = onDismissRequest) {
+        Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(
+                modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    if (interventionExistante == null) "Enregistrer $typeIntervention" else "Modifier Temps $typeIntervention",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text("Chantier: $chantierNom", style = MaterialTheme.typography.titleSmall)
+
+                Text("Début", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { showDatePickerDebut = true }, modifier = Modifier.weight(1f)) {
+                        Text(dateFormat.format(dateDebut))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(onClick = {
+                        val cal = Calendar.getInstance().apply { time = heureDebut }
+                        TimePickerDialog(context, { _, h, m ->
+                            val currentHourCal = Calendar.getInstance().apply { time = heureDebut }
+                            currentHourCal.set(Calendar.HOUR_OF_DAY, h)
+                            currentHourCal.set(Calendar.MINUTE, m)
+                            heureDebut = currentHourCal.time
+                        }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show()
+                    }, modifier = Modifier.weight(1f)) {
+                        Text(timeFormat.format(heureDebut))
+                    }
+                }
+
+                TabRow(selectedTabIndex = tabIndex) {
+                    Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Heure Fin") })
+                    Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Durée") })
+                }
+
+                when (tabIndex) {
+                    0 -> { // Heure Fin
+                        Text("Fin", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(onClick = { showDatePickerFin = true }, modifier = Modifier.weight(1f)) {
+                                Text(dateFormat.format(dateFinState))
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedButton(onClick = {
+                                val cal = Calendar.getInstance().apply { time = heureFinState }
+                                TimePickerDialog(context, { _, h, m ->
+                                    val currentHourCal = Calendar.getInstance().apply { time = heureFinState }
+                                    currentHourCal.set(Calendar.HOUR_OF_DAY, h)
+                                    currentHourCal.set(Calendar.MINUTE, m)
+                                    heureFinState = currentHourCal.time
+                                }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show()
+                            }, modifier = Modifier.weight(1f)) {
+                                Text(timeFormat.format(heureFinState))
+                            }
+                        }
+                    }
+                    1 -> { // Durée
+                        Text("Durée", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = dureeHeures,
+                                onValueChange = { if (it.length <= 2 && it.all {c -> c.isDigit()}) dureeHeures = it },
+                                label = { Text("Heures") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = dureeMinutes,
+                                onValueChange = { if (it.length <= 2 && it.all {c -> c.isDigit()} && (it.toIntOrNull() ?: 0) < 60) dureeMinutes = it },
+                                label = { Text("Min") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+                val combinedDebutCheck = getCombinedDateTime(dateDebut, heureDebut)
+                val combinedFinCheck = getCombinedDateTime(dateFinState, heureFinState)
+                if (combinedFinCheck.before(combinedDebutCheck) && tabIndex == 0) {
+                    Text("L'heure de fin doit être après l'heure de début.", color = MaterialTheme.colorScheme.error)
+                }
+
+
+                if (showDatePickerDebut) {
+                    DatePickerDialog(
+                        onDismissRequest = { showDatePickerDebut = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                datePickerStateDebut.selectedDateMillis?.let {
+                                    dateDebut = Date(it)
+                                }
+                                showDatePickerDebut = false
+                            }) { Text("OK") }
+                        },
+                        dismissButton = { TextButton(onClick = { showDatePickerDebut = false }) { Text("Annuler") } }
+                    ) { DatePicker(state = datePickerStateDebut) }
+                }
+                if (showDatePickerFin) {
+                    DatePickerDialog(
+                        onDismissRequest = { showDatePickerFin = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                datePickerStateFin.selectedDateMillis?.let {
+                                    dateFinState = Date(it)
+                                }
+                                showDatePickerFin = false
+                            }) { Text("OK") }
+                        },
+                        dismissButton = { TextButton(onClick = { showDatePickerFin = false }) { Text("Annuler") } }
+                    ) { DatePicker(state = datePickerStateFin) }
+                }
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes (optionnel)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismissRequest) { Text("Annuler") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val finalDebut = getCombinedDateTime(dateDebut, heureDebut)
+                            var finalFin: Date? = null
+                            var finalDuree: Long? = null
+
+                            if (tabIndex == 0) { // Heure Fin active
+                                val tempFinalFin = getCombinedDateTime(dateFinState, heureFinState)
+                                if (tempFinalFin.after(finalDebut)) {
+                                    finalFin = tempFinalFin
+                                    finalDuree = finalFin.time - finalDebut.time
+                                } else {
+                                    Toast.makeText(context, "L'heure de fin doit être après l'heure de début.", Toast.LENGTH_LONG).show()
+                                    return@Button
+                                }
+                            } else { // Durée active
+                                val h = dureeHeures.toLongOrNull() ?: 0
+                                val m = dureeMinutes.toLongOrNull() ?: 0
+                                if (h < 0 || m < 0 || m >= 60) {
+                                    Toast.makeText(context, "Durée invalide.", Toast.LENGTH_LONG).show()
+                                    return@Button
+                                }
+                                finalDuree = TimeUnit.HOURS.toMillis(h) + TimeUnit.MINUTES.toMillis(m)
+                                if (finalDuree < 0) {
+                                    Toast.makeText(context, "La durée ne peut pas être négative.", Toast.LENGTH_LONG).show()
+                                    return@Button
+                                }
+                                finalFin = Date(finalDebut.time + finalDuree)
+                            }
+
+                            if (finalDuree != null && finalDuree < 0) {
+                                Toast.makeText(context, "La durée calculée est négative. Vérifiez les heures.", Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
+
+                            onConfirm(finalDebut, finalFin, finalDuree, notes.ifBlank { null })
+                        }
+                    ) { Text(if (interventionExistante == null) "Enregistrer" else "Modifier") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SaisieNotesInterventionDialog(
+    notesInitiales: String,
+    onDismissRequest: () -> Unit,
+    onConfirm: (String?) -> Unit
+) {
+    var notes by remember { mutableStateOf(notesInitiales) }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text("Ajouter des notes (optionnel)") },
+        text = {
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = { Text("Notes pour l'intervention") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(notes.ifBlank { null }) }) {
+                Text("Valider")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+@Composable
+fun ServiceSectionHeader(title: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
+}
+
+@Composable
+fun InfoLine(label: String, value: String, color: Color = LocalContentColor.current) {
+    Row(modifier = Modifier.padding(bottom = 2.dp)) {
+        Text(label, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(value, color = color)
     }
 }
 
@@ -578,13 +966,9 @@ fun EditChantierDialog(
                 Text("Modifier le chantier", style = MaterialTheme.typography.titleLarge)
                 OutlinedTextField(value = nomClient, onValueChange = { nomClient = it }, label = { Text("Nom du client / Chantier") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = adresse, onValueChange = { adresse = it }, label = { Text("Adresse (optionnel)") }, modifier = Modifier.fillMaxWidth())
-
-                // Utilisation de ServiceActivationRow défini dans ChantierScreen.kt (ou un fichier partagé)
                 ServiceActivationRow(label = "Suivi des Tontes Actif", checked = tonteActive, onCheckedChange = { tonteActive = it })
                 ServiceActivationRow(label = "Suivi des Tailles Actif", checked = tailleActive, onCheckedChange = { tailleActive = it })
                 ServiceActivationRow(label = "Suivi Désherbage Actif", checked = desherbageActive, onCheckedChange = { desherbageActive = it })
-
-
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismissRequest) { Text("Annuler") }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -608,6 +992,17 @@ fun EditChantierDialog(
     }
 }
 
+@Composable
+fun ConfirmDeleteDialog(title: String, text: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = { Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Supprimer") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditInterventionNoteDialog(
@@ -623,7 +1018,7 @@ fun EditInterventionNoteDialog(
         title = { Text("Modifier la note") },
         text = {
             Column {
-                Text("Intervention: ${intervention.typeIntervention} du ${dateTimeFormat.format(intervention.dateIntervention)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp))
+                Text("Intervention: ${intervention.typeIntervention} du ${intervention.heureDebut?.let { dateTimeFormat.format(it) } ?: dateTimeFormat.format(intervention.dateIntervention)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp))
                 OutlinedTextField(value = notesText, onValueChange = { notesText = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5)
             }
         },
@@ -632,16 +1027,81 @@ fun EditInterventionNoteDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfirmDeleteDialog(title: String, text: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = { Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Supprimer") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+fun PlanifierDesherbageDialog(
+    chantierId: Long,
+    desherbagePlanifieInitial: DesherbagePlanifie?,
+    onDismissRequest: () -> Unit,
+    onConfirm: (chantierId: Long, date: Date, notes: String?, planifExistante: DesherbagePlanifie?) -> Unit
+) {
+    val isEditing = desherbagePlanifieInitial != null
+    val title = if (isEditing) "Modifier Planification Désherbage" else "Planifier un Désherbage"
+
+    var notes by remember(desherbagePlanifieInitial?.notesPlanification) { mutableStateOf(desherbagePlanifieInitial?.notesPlanification ?: "") }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = desherbagePlanifieInitial?.datePlanifiee?.time ?: System.currentTimeMillis(),
+        selectableDates = AllDatesSelectableDates
     )
+    var showDatePicker by remember { mutableStateOf(false) }
+    var displayedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis ?: System.currentTimeMillis())}
+
+
+    Dialog(onDismissRequest = onDismissRequest) {
+        Card(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = MaterialTheme.shapes.large) {
+            Column(
+                modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(title, style = MaterialTheme.typography.titleLarge)
+
+                OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(displayedDateMillis)))
+                }
+
+                if (showDatePicker) {
+                    DatePickerDialog(
+                        onDismissRequest = { showDatePicker = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                datePickerState.selectedDateMillis?.let { selectedMillis ->
+                                    displayedDateMillis = selectedMillis
+                                }
+                                showDatePicker = false
+                            }) { Text("OK") }
+                        },
+                        dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Annuler") } }
+                    ) { DatePicker(state = datePickerState) }
+                }
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes de planification (optionnel)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismissRequest) { Text("Annuler") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onConfirm(chantierId, Date(displayedDateMillis), notes.ifBlank { null }, desherbagePlanifieInitial)
+                        }
+                    ) { Text(if (isEditing) "Enregistrer" else "Planifier") }
+                }
+            }
+        }
+    }
 }
+
+// Removed the local definition of ServiceActivationRow to resolve ambiguity.
+// Ensure it's defined once elsewhere (e.g., ChantierScreen.kt or a shared utils file)
+// and imported here if needed by EditChantierDialog.
+// @Composable
+// fun ServiceActivationRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) { ... }
 
 @Composable
 fun DesherbagePlanifieItem(
@@ -691,7 +1151,7 @@ fun DesherbagePlanifieItem(
                 )
             }
             IconButton(onClick = onMarkAsDone, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Done, contentDescription = "Marquer comme effectué et enregistrer intervention", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Filled.Done, contentDescription = "Marquer comme effectué", tint = MaterialTheme.colorScheme.primary)
             }
         } else {
             IconButton(onClick = onExportToCalendar, modifier = Modifier.size(36.dp)) {
@@ -710,77 +1170,3 @@ fun DesherbagePlanifieItem(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PlanifierDesherbageDialog(
-    chantierId: Long,
-    desherbagePlanifieInitial: DesherbagePlanifie?,
-    onDismissRequest: () -> Unit,
-    onConfirm: (chantierId: Long, date: Date, notes: String?, planifExistante: DesherbagePlanifie?) -> Unit
-) {
-    val isEditing = desherbagePlanifieInitial != null
-    val title = if (isEditing) "Modifier Planification Désherbage" else "Planifier un Désherbage"
-
-    var notes by remember(desherbagePlanifieInitial?.notesPlanification) { mutableStateOf(desherbagePlanifieInitial?.notesPlanification ?: "") }
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = desherbagePlanifieInitial?.datePlanifiee?.time ?: System.currentTimeMillis(),
-        selectableDates = AllDatesSelectableDates
-    )
-    var showDatePicker by remember { mutableStateOf(false) }
-    var tempSelectedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis ?: System.currentTimeMillis()) }
-
-
-    Dialog(onDismissRequest = onDismissRequest) {
-        Card(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = MaterialTheme.shapes.large) {
-            Column(
-                modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(title, style = MaterialTheme.typography.titleLarge)
-
-                Button(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(tempSelectedDateMillis)))
-                }
-
-                if (showDatePicker) {
-                    DatePickerDialog(
-                        onDismissRequest = { showDatePicker = false },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                datePickerState.selectedDateMillis?.let { tempSelectedDateMillis = it }
-                                showDatePicker = false
-                            }) { Text("OK") }
-                        },
-                        dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Annuler") } }
-                    ) { DatePicker(state = datePickerState) }
-                }
-
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes de planification (optionnel)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
-                )
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismissRequest) { Text("Annuler") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            onConfirm(chantierId, Date(tempSelectedDateMillis), notes.ifBlank { null }, desherbagePlanifieInitial)
-                        }
-                    ) { Text(if (isEditing) "Enregistrer" else "Planifier") }
-                }
-            }
-        }
-    }
-}
-
-// Note: ServiceActivationRow n'est plus défini ici,
-// il utilisera celui de ChantierScreen.kt
-// Si ChantierScreen.kt ne le définit pas comme public top-level,
-// il faudra le déplacer ici ou dans un fichier partagé.
-// Pour l'instant, on suppose qu'il est accessible.
