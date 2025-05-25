@@ -22,5 +22,6 @@ data class DesherbagePlanifie(
     val chantierId: Long,
     val datePlanifiee: Date,
     var estEffectue: Boolean = false,
-    var notesPlanification: String? = null // Notes spécifiques à cette planification
+    var notesPlanification: String? = null, // Notes spécifiques à cette planification
+    var exporteAgenda: Boolean = false // Nouveau champ pour le suivi de l'exportation vers l'agenda
 )
