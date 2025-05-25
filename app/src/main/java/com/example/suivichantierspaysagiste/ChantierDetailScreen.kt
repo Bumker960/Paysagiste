@@ -8,10 +8,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime // Pour modifier le temps
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -19,31 +20,33 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.EventNote
-import androidx.compose.material.icons.filled.MoreVert // Pour le menu d'édition de temps
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MyLocation // Icône pour géocodage
 import androidx.compose.material.icons.filled.PauseCircleOutline
 import androidx.compose.material.icons.filled.PlayCircleOutline
-import androidx.compose.material.icons.filled.StopCircle // Pour Terminer
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.google.android.gms.maps.model.LatLng
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
-// Assurez-vous que ServiceActivationRow est défini UNE SEULE FOIS dans votre projet
-// (par exemple, dans ChantierScreen.kt ou un fichier commun de Composables)
-// et importez-le ici si ce fichier est dans un package différent.
-// import com.example.suivichantierspaysagiste.ServiceActivationRow // Exemple d'import si nécessaire
 
 @OptIn(ExperimentalMaterial3Api::class)
 private object NoFutureDatesSelectableDates : SelectableDates {
@@ -97,7 +100,6 @@ fun ChantierDetailScreen(
     val nombreTotalDesherbagesEffectues by viewModel.nombreTotalDesherbagesEffectues.collectAsStateWithLifecycle()
 
     val interventionEnCoursUiState by viewModel.interventionEnCoursUi.collectAsStateWithLifecycle()
-    Log.d("ChantierDetailScreen", "interventionEnCoursUiState: $interventionEnCoursUiState")
 
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
@@ -172,9 +174,19 @@ fun ChantierDetailScreen(
             }
             currentChantier.adresse?.let { adresse ->
                 if (adresse.isNotBlank()) {
-                    Text(text = "Adresse: $adresse", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+                    Text(text = "Adresse: $adresse", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
                 }
             }
+            // Affichage des coordonnées si disponibles
+            if (currentChantier.latitude != null && currentChantier.longitude != null) {
+                Text(
+                    text = "Coordonnées: Lat %.4f, Lng %.4f".format(currentChantier.latitude, currentChantier.longitude),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             if (currentChantier.serviceTonteActive) {
@@ -258,7 +270,7 @@ fun ChantierDetailScreen(
                             dateFormat = dateFormat,
                             onMarkAsDone = {
                                 viewModel.marquerDesherbagePlanifieEffectue(planif.id, Date(), planif.notesPlanification)
-                                Toast.makeText(context, "Planification marquée comme effectuée. N'oubliez pas d'enregistrer l'intervention de désherbage si nécessaire.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Planification marquée comme effectuée.", Toast.LENGTH_LONG).show()
                             },
                             onEdit = { desherbagePlanifieAModifier = planif; showPlanifierDesherbageDialog = true },
                             onDelete = { desherbagePlanifieASupprimerId = planif.id },
@@ -309,8 +321,9 @@ fun ChantierDetailScreen(
     if (showEditChantierDialog && chantier != null) {
         EditChantierDialog(
             chantierInitial = chantier!!,
+            viewModel = viewModel, // Passer le viewModel
             onDismissRequest = { showEditChantierDialog = false },
-            onConfirm = { chantierModifie ->
+            onConfirm = { chantierModifie -> // chantierModifie inclut maintenant lat/lng
                 viewModel.updateChantier(chantierModifie)
                 showEditChantierDialog = false
             }
@@ -359,13 +372,10 @@ fun ChantierDetailScreen(
         SaisieNotesInterventionDialog(
             notesInitiales = notesPourInterventionTerminee,
             onDismissRequest = {
-                // Si l'utilisateur annule la saisie de notes, on termine quand même l'intervention,
-                // potentiellement avec les notes initiales (qui sont "" ici) ou null.
                 viewModel.terminerInterventionChrono(notesPourInterventionTerminee.ifBlank { null })
                 showSaisieNotesDialog = false
             },
-            onConfirm = { notesSaisies -> // notesSaisies est de type String? ici
-                // CORRECTION APPLIQUÉE ICI : on passe notesSaisies directement
+            onConfirm = { notesSaisies ->
                 viewModel.terminerInterventionChrono(notesSaisies)
                 showSaisieNotesDialog = false
             }
@@ -385,7 +395,7 @@ fun ChantierDetailScreen(
             onConfirm = { dateDebut, dateFin, dureeMillis, notes ->
                 if (interventionAModifierTemps != null) {
                     viewModel.modifierTempsIntervention(interventionAModifierTemps!!.id, dateDebut, dateFin, dureeMillis)
-                    if(notes != interventionAModifierTemps!!.notes) {
+                    if(notes != interventionAModifierTemps!!.notes) { // Mettre à jour les notes seulement si elles ont changé
                         viewModel.updateInterventionNotes(interventionAModifierTemps!!, notes)
                     }
                 } else {
@@ -427,6 +437,9 @@ fun ChantierDetailScreen(
     }
 }
 
+// ... (Les autres composables comme ServiceSectionChrono, InterventionEnCoursCard, etc. restent ici)
+// ... Assurez-vous qu'ils sont présents ou importés si définis ailleurs.
+
 @Composable
 fun ServiceSectionChrono(
     titre: String,
@@ -461,7 +474,7 @@ fun ServiceSectionChrono(
             Button(
                 onClick = onDemarrerClick,
                 modifier = Modifier.weight(1f),
-                enabled = interventionEnCoursGlobale == null
+                enabled = interventionEnCoursGlobale == null // Désactivé si N'IMPORTE QUELLE intervention est en cours
             ) { Text("Démarrer") }
             OutlinedButton(
                 onClick = onEnregistrerManuelClick,
@@ -531,14 +544,15 @@ fun InterventionHistoriqueItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(vertical = 8.dp), // Augmentation du padding vertical
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.Top // Alignement en haut pour les notes longues
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) { // Ajout d'un padding à droite
             Text(
                 "${intervention.typeIntervention} - ${intervention.heureDebut?.let { dateTimeFormat.format(it) } ?: dateTimeFormat.format(intervention.dateIntervention)}",
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyLarge // Style un peu plus grand
             )
             if (intervention.heureFin != null && intervention.dureeEffective != null) {
                 Text(
@@ -555,13 +569,13 @@ fun InterventionHistoriqueItem(
                         "Notes: $notes",
                         style = MaterialTheme.typography.bodySmall,
                         fontStyle = FontStyle.Italic,
-                        modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp) // Léger padding pour les notes
                     )
                 }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onExportToCalendar, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = onExportToCalendar, modifier = Modifier.size(40.dp)) { // Taille un peu augmentée
                 Icon(
                     imageVector = if (intervention.exporteAgenda) Icons.Filled.EventAvailable else Icons.Filled.EventNote,
                     contentDescription = if (intervention.exporteAgenda) "Exporté vers l'agenda" else "Ajouter à l'agenda",
@@ -569,7 +583,7 @@ fun InterventionHistoriqueItem(
                 )
             }
             Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) { // Taille un peu augmentée
                     Icon(Icons.Filled.MoreVert, contentDescription = "Plus d'options")
                 }
                 DropdownMenu(
@@ -623,7 +637,7 @@ fun EnregistrerTempsManuellementDialog(
         interventionExistante?.dureeEffective?.let { (TimeUnit.MILLISECONDS.toMinutes(it) % 60).toString() } ?: "0"
     )}
 
-    var tabIndex by remember { mutableStateOf(0) }
+    var tabIndex by remember { mutableStateOf(if (interventionExistante?.dureeEffective != null && interventionExistante.heureFin == null) 1 else 0) } // Onglet durée si durée mais pas heure fin
 
     LaunchedEffect(interventionExistante) {
         interventionExistante?.let {
@@ -633,12 +647,14 @@ fun EnregistrerTempsManuellementDialog(
                 dateFinState = hf
                 heureFinState = hf
                 tabIndex = 0
-            } ?: run {
-                val defaultFin = Date(dateDebut.time + TimeUnit.HOURS.toMillis(1))
+            } ?: run { // Pas d'heure de fin
+                val defaultFin = Date(dateDebut.time + TimeUnit.HOURS.toMillis(1)) // Fin par défaut
                 dateFinState = defaultFin
                 heureFinState = defaultFin
-                it.dureeEffective?.let { de ->
-                    if (de > 0) tabIndex = 1
+                if (it.dureeEffective != null && it.dureeEffective!! > 0) { // Si durée existe, privilégier cet onglet
+                    tabIndex = 1
+                } else {
+                    tabIndex = 0 // Sinon, onglet heure de fin
                 }
             }
             notes = it.notes ?: ""
@@ -646,12 +662,12 @@ fun EnregistrerTempsManuellementDialog(
                 dureeHeures = TimeUnit.MILLISECONDS.toHours(de).toString()
                 dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(de) % 60).toString()
             } ?: run {
-                if(it.heureFin == null){
+                if(it.heureFin == null){ // Si pas d'heure de fin et pas de durée, mettre durée par défaut
                     dureeHeures = "1"
                     dureeMinutes = "0"
                 }
             }
-        } ?: run {
+        } ?: run { // Nouvelle intervention
             val now = Date()
             dateDebut = now
             heureDebut = now
@@ -680,19 +696,23 @@ fun EnregistrerTempsManuellementDialog(
     }
 
     LaunchedEffect(tabIndex, dateDebut, heureDebut, dateFinState, heureFinState) {
-        if (tabIndex == 0) {
+        if (tabIndex == 0) { // Si l'onglet "Heure Fin" est sélectionné
             val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
             val combinedFin = getCombinedDateTime(dateFinState, heureFinState)
             if (combinedFin.after(combinedDebut)) {
                 val diff = combinedFin.time - combinedDebut.time
                 dureeHeures = TimeUnit.MILLISECONDS.toHours(diff).toString()
                 dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(diff) % 60).toString()
+            } else {
+                // Optionnel: réinitialiser durée si fin < début, ou afficher erreur
+                dureeHeures = "0"
+                dureeMinutes = "0"
             }
         }
     }
 
     LaunchedEffect(tabIndex, dateDebut, heureDebut, dureeHeures, dureeMinutes) {
-        if (tabIndex == 1) {
+        if (tabIndex == 1) { // Si l'onglet "Durée" est sélectionné
             val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
             val h = dureeHeures.toLongOrNull() ?: 0
             val m = dureeMinutes.toLongOrNull() ?: 0
@@ -845,7 +865,7 @@ fun EnregistrerTempsManuellementDialog(
                             var finalFin: Date? = null
                             var finalDuree: Long? = null
 
-                            if (tabIndex == 0) {
+                            if (tabIndex == 0) { // Onglet Heure Fin
                                 val tempFinalFin = getCombinedDateTime(dateFinState, heureFinState)
                                 if (tempFinalFin.after(finalDebut)) {
                                     finalFin = tempFinalFin
@@ -854,7 +874,7 @@ fun EnregistrerTempsManuellementDialog(
                                     Toast.makeText(context, "L'heure de fin doit être après l'heure de début.", Toast.LENGTH_LONG).show()
                                     return@Button
                                 }
-                            } else {
+                            } else { // Onglet Durée
                                 val h = dureeHeures.toLongOrNull() ?: 0
                                 val m = dureeMinutes.toLongOrNull() ?: 0
                                 if (h < 0 || m < 0 || m >= 60) {
@@ -862,16 +882,16 @@ fun EnregistrerTempsManuellementDialog(
                                     return@Button
                                 }
                                 finalDuree = TimeUnit.HOURS.toMillis(h) + TimeUnit.MINUTES.toMillis(m)
-                                if (finalDuree < 0) {
-                                    Toast.makeText(context, "La durée ne peut pas être négative.", Toast.LENGTH_LONG).show()
-                                    return@Button
+                                if (finalDuree <= 0 && !(h == 0L && m == 0L && interventionExistante != null) ) { // Permettre 0 si modification et c'était déjà 0
+                                    if (finalDuree == 0L && interventionExistante == null) {
+                                        Toast.makeText(context, "La durée doit être supérieure à 0.", Toast.LENGTH_LONG).show()
+                                        return@Button
+                                    } else if (finalDuree <0) {
+                                        Toast.makeText(context, "La durée ne peut pas être négative.", Toast.LENGTH_LONG).show()
+                                        return@Button
+                                    }
                                 }
-                                finalFin = Date(finalDebut.time + finalDuree)
-                            }
-
-                            if (finalDuree != null && finalDuree < 0) {
-                                Toast.makeText(context, "La durée calculée est négative. Vérifiez les heures.", Toast.LENGTH_LONG).show()
-                                return@Button
+                                finalFin = Date(finalDebut.time + finalDuree!!)
                             }
                             onConfirm(finalDebut, finalFin, finalDuree, notes.ifBlank { null })
                         }
@@ -915,6 +935,7 @@ fun SaisieNotesInterventionDialog(
     )
 }
 
+
 @Composable
 fun ServiceSectionHeader(title: String) {
     Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
@@ -933,14 +954,24 @@ fun InfoLine(label: String, value: String, color: Color = LocalContentColor.curr
 @Composable
 fun EditChantierDialog(
     chantierInitial: Chantier,
+    viewModel: ChantierViewModel, // ViewModel nécessaire pour le géocodage
     onDismissRequest: () -> Unit,
-    onConfirm: (Chantier) -> Unit
+    onConfirm: (Chantier) -> Unit // Le Chantier contiendra lat/lng
 ) {
     var nomClient by remember(chantierInitial.nomClient) { mutableStateOf(chantierInitial.nomClient) }
     var adresse by remember(chantierInitial.adresse) { mutableStateOf(chantierInitial.adresse ?: "") }
     var tonteActive by remember(chantierInitial.serviceTonteActive) { mutableStateOf(chantierInitial.serviceTonteActive) }
     var tailleActive by remember(chantierInitial.serviceTailleActive) { mutableStateOf(chantierInitial.serviceTailleActive) }
     var desherbageActive by remember(chantierInitial.serviceDesherbageActive) { mutableStateOf(chantierInitial.serviceDesherbageActive) }
+
+    // États pour les coordonnées et le géocodage
+    var latitude by remember(chantierInitial.latitude) { mutableStateOf(chantierInitial.latitude) }
+    var longitude by remember(chantierInitial.longitude) { mutableStateOf(chantierInitial.longitude) }
+    var geocodingInProgress by remember { mutableStateOf(false) }
+    var geocodingResultMessage by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
 
     Dialog(onDismissRequest = onDismissRequest) {
         Card(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = MaterialTheme.shapes.large) {
@@ -950,12 +981,68 @@ fun EditChantierDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text("Modifier le chantier", style = MaterialTheme.typography.titleLarge)
-                OutlinedTextField(value = nomClient, onValueChange = { nomClient = it }, label = { Text("Nom du client / Chantier") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = adresse, onValueChange = { adresse = it }, label = { Text("Adresse (optionnel)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = nomClient,
+                    onValueChange = { nomClient = it },
+                    label = { Text("Nom du client / Chantier *") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = adresse,
+                        onValueChange = {
+                            adresse = it
+                            // Si l'adresse change, on pourrait vouloir réinitialiser les coordonnées
+                            // ou indiquer qu'elles pourraient ne plus être valides.
+                            // Pour l'instant, on laisse l'utilisateur re-géocoder manuellement.
+                            geocodingResultMessage = if (latitude != null && it != chantierInitial.adresse) "Adresse modifiée, re-géocoder si besoin." else null
+                        },
+                        label = { Text("Adresse (pour géocodage)") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+                    )
+                    IconButton(
+                        onClick = {
+                            if (adresse.isNotBlank()) {
+                                focusManager.clearFocus()
+                                geocodingInProgress = true
+                                geocodingResultMessage = "Recherche..."
+                                viewModel.geocodeAdresse(adresse) { latLng ->
+                                    geocodingInProgress = false
+                                    if (latLng != null) {
+                                        latitude = latLng.latitude
+                                        longitude = latLng.longitude
+                                        geocodingResultMessage = "Nouvelles coordonnées trouvées !"
+                                    } else {
+                                        // Garder les anciennes coordonnées si le nouveau géocodage échoue ?
+                                        // latitude = null // Ou chantierInitial.latitude
+                                        // longitude = null // Ou chantierInitial.longitude
+                                        geocodingResultMessage = "Adresse non trouvée."
+                                    }
+                                }
+                            } else {
+                                Toast.makeText(context, "Veuillez entrer une adresse.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = !geocodingInProgress && adresse.isNotBlank()
+                    ) {
+                        if (geocodingInProgress) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(Icons.Filled.MyLocation, contentDescription = "Obtenir/Modifier coordonnées")
+                        }
+                    }
+                }
+                geocodingResultMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = if (latitude != null && geocodingResultMessage?.contains("trouvées") == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                }
+                if (latitude != null && longitude != null) {
+                    Text("Lat: %.4f, Lng: %.4f".format(latitude, longitude), style = MaterialTheme.typography.bodySmall)
+                }
 
-                // Les appels à ServiceActivationRow sont rétablis.
-                // Assurez-vous que ServiceActivationRow est défini UNE SEULE FOIS dans votre projet
-                // et est accessible ici (par exemple, via un import si nécessaire depuis ChantierScreen.kt ou un fichier commun).
+
                 ServiceActivationRow(label = "Suivi des Tontes Actif", checked = tonteActive, onCheckedChange = { tonteActive = it })
                 ServiceActivationRow(label = "Suivi des Tailles Actif", checked = tailleActive, onCheckedChange = { tailleActive = it })
                 ServiceActivationRow(label = "Suivi Désherbage Actif", checked = desherbageActive, onCheckedChange = { desherbageActive = it })
@@ -971,11 +1058,13 @@ fun EditChantierDialog(
                                     adresse = adresse.ifBlank { null },
                                     serviceTonteActive = tonteActive,
                                     serviceTailleActive = tailleActive,
-                                    serviceDesherbageActive = desherbageActive
+                                    serviceDesherbageActive = desherbageActive,
+                                    latitude = latitude, // Sauvegarder les coordonnées
+                                    longitude = longitude // Sauvegarder les coordonnées
                                 ))
                             }
                         },
-                        enabled = nomClient.isNotBlank()
+                        enabled = nomClient.isNotBlank() && !geocodingInProgress
                     ) { Text("Enregistrer") }
                 }
             }
@@ -1032,10 +1121,11 @@ fun PlanifierDesherbageDialog(
     var notes by remember(desherbagePlanifieInitial?.notesPlanification) { mutableStateOf(desherbagePlanifieInitial?.notesPlanification ?: "") }
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = desherbagePlanifieInitial?.datePlanifiee?.time ?: System.currentTimeMillis(),
-        selectableDates = AllDatesSelectableDates
+        selectableDates = AllDatesSelectableDates // Permet de sélectionner toutes les dates
     )
     var showDatePicker by remember { mutableStateOf(false) }
-    var displayedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis ?: System.currentTimeMillis())}
+    // Utiliser selectedDateMillis directement pour la confirmation, pas besoin d'un autre état pour la date affichée
+    // var displayedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis ?: System.currentTimeMillis())}
 
 
     Dialog(onDismissRequest = onDismissRequest) {
@@ -1048,7 +1138,8 @@ fun PlanifierDesherbageDialog(
                 Text(title, style = MaterialTheme.typography.titleLarge)
 
                 OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(Date(displayedDateMillis)))
+                    val selectedDate = datePickerState.selectedDateMillis?.let { Date(it) } ?: Date()
+                    Text(SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(selectedDate))
                 }
 
                 if (showDatePicker) {
@@ -1056,9 +1147,7 @@ fun PlanifierDesherbageDialog(
                         onDismissRequest = { showDatePicker = false },
                         confirmButton = {
                             TextButton(onClick = {
-                                datePickerState.selectedDateMillis?.let { selectedMillis ->
-                                    displayedDateMillis = selectedMillis
-                                }
+                                // La date est déjà dans datePickerState.selectedDateMillis
                                 showDatePicker = false
                             }) { Text("OK") }
                         },
@@ -1079,7 +1168,8 @@ fun PlanifierDesherbageDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            onConfirm(chantierId, Date(displayedDateMillis), notes.ifBlank { null }, desherbagePlanifieInitial)
+                            val confirmedDateMillis = datePickerState.selectedDateMillis ?: System.currentTimeMillis() // Fallback si null
+                            onConfirm(chantierId, Date(confirmedDateMillis), notes.ifBlank { null }, desherbagePlanifieInitial)
                         }
                     ) { Text(if (isEditing) "Enregistrer" else "Planifier") }
                 }
@@ -1103,13 +1193,13 @@ fun DesherbagePlanifieItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(vertical = 8.dp), // Padding vertical augmenté
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             Icons.Filled.Event,
             contentDescription = "Date planifiée",
-            modifier = Modifier.padding(end = 8.dp),
+            modifier = Modifier.padding(end = 12.dp), // Espace augmenté
             tint = itemColor
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -1127,31 +1217,26 @@ fun DesherbagePlanifieItem(
                 }
             }
         }
-        if (!planification.estEffectue) {
-            IconButton(onClick = onExportToCalendar, modifier = Modifier.size(36.dp)) {
+        // Actions
+        Row {
+            if (!planification.estEffectue) {
+                IconButton(onClick = onMarkAsDone, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Filled.Done, contentDescription = "Marquer comme effectué", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            IconButton(onClick = onExportToCalendar, modifier = Modifier.size(40.dp)) {
                 Icon(
                     imageVector = if (planification.exporteAgenda) Icons.Filled.EventAvailable else Icons.Filled.EventNote,
                     contentDescription = if (planification.exporteAgenda) "Exporté vers l'agenda" else "Ajouter à l'agenda",
-                    tint = if (planification.exporteAgenda) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                    tint = if (planification.exporteAgenda) MaterialTheme.colorScheme.primary else (if (planification.estEffectue) itemColor else LocalContentColor.current)
                 )
             }
-            IconButton(onClick = onMarkAsDone, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Done, contentDescription = "Marquer comme effectué", tint = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.Edit, contentDescription = "Modifier planification", tint = if (planification.estEffectue) itemColor else LocalContentColor.current)
             }
-        } else {
-            IconButton(onClick = onExportToCalendar, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    imageVector = if (planification.exporteAgenda) Icons.Filled.EventAvailable else Icons.Filled.EventNote,
-                    contentDescription = if (planification.exporteAgenda) "Exporté vers l'agenda" else "Ajouter à l'agenda",
-                    tint = if (planification.exporteAgenda) MaterialTheme.colorScheme.primary else itemColor
-                )
+            IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.Delete, contentDescription = "Supprimer planification", tint = MaterialTheme.colorScheme.error)
             }
-        }
-        IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Filled.Edit, contentDescription = "Modifier planification", tint = if (planification.estEffectue) itemColor else LocalContentColor.current)
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Filled.Delete, contentDescription = "Supprimer planification", tint = MaterialTheme.colorScheme.error)
         }
     }
 }

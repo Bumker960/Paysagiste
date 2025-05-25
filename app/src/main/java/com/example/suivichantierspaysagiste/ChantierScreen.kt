@@ -1,24 +1,40 @@
 package com.example.suivichantierspaysagiste
 
+import android.widget.Toast // IMPORT AJOUTÉ POUR TOAST
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions // Pour gérer l'action du clavier
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MyLocation // Icône pour géocodage
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+// Assurez-vous que cet import est présent pour LatLng si vous l'utilisez directement ici,
+// bien que ce soit géré dans le ViewModel pour le géocodage.
+// import com.google.android.gms.maps.model.LatLng
+import kotlinx.coroutines.launch
 
+
+// Cet objet peut être supprimé si vous utilisez MaterialTheme.colorScheme partout
 object ModernColorsScreen {
     val barBackground = Color(0xFF004D40)
     val contentColor = Color.White
@@ -39,14 +55,18 @@ fun ChantierListScreen(
             TopAppBar(
                 title = { Text("Mes Chantiers") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = ModernColorsScreen.barBackground,
-                    titleContentColor = ModernColorsScreen.contentColor,
-                    actionIconContentColor = ModernColorsScreen.contentColor
+                    containerColor = MaterialTheme.colorScheme.primary, // Utilisation de MaterialTheme
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showDialog = true }) {
+            FloatingActionButton(
+                onClick = { showDialog = true },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            ) {
                 Icon(Icons.Filled.Add, contentDescription = "Ajouter un chantier")
             }
         }
@@ -80,11 +100,10 @@ fun ChantierListScreen(
             }
             else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(chantiers) { chantier ->
+                    items(chantiers, key = { chantier -> chantier.id }) { chantier ->
                         ChantierItem(
                             chantier = chantier,
                             onClick = {
-                                // Pas besoin de viewModel.loadChantierById ici, car ChantierDetailScreen le fait dans LaunchedEffect
                                 navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${chantier.id}")
                             }
                         )
@@ -96,9 +115,10 @@ fun ChantierListScreen(
 
         if (showDialog) {
             AjouterChantierDialog(
+                viewModel = viewModel, // Passer le viewModel
                 onDismissRequest = { showDialog = false },
-                onConfirm = { nom, adresse, tonteActive, tailleActive, desherbageActive -> // Ajout de desherbageActive
-                    viewModel.ajouterChantier(nom, adresse, tonteActive, tailleActive, desherbageActive) // Appel au ViewModel modifié
+                onConfirm = { nom, adresse, tonteActive, tailleActive, desherbageActive, latitude, longitude ->
+                    viewModel.ajouterChantier(nom, adresse, tonteActive, tailleActive, desherbageActive, latitude, longitude)
                     viewModel.onSearchQueryChanged("")
                     showDialog = false
                 }
@@ -113,20 +133,26 @@ fun ChantierItem(chantier: Chantier, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 16.dp) // Ajusté pour correspondre au padding global
+            .padding(vertical = 12.dp, horizontal = 4.dp)
     ) {
         Text(text = chantier.nomClient, style = MaterialTheme.typography.titleMedium)
         if (chantier.adresse != null && chantier.adresse!!.isNotBlank()) {
-            Text(text = chantier.adresse!!, style = MaterialTheme.typography.bodySmall)
+            Text(text = chantier.adresse!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        if (chantier.latitude != null && chantier.longitude != null) {
+            Text(
+                text = "Lat: %.4f, Lng: %.4f".format(chantier.latitude, chantier.longitude),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
             if (chantier.serviceTonteActive) {
                 ServiceChip("Tonte", MaterialTheme.colorScheme.primary)
             }
             if (chantier.serviceTailleActive) {
                 ServiceChip("Taille", MaterialTheme.colorScheme.secondary)
             }
-            // NOUVEAU: Afficher si le service de désherbage est actif
             if (chantier.serviceDesherbageActive) {
                 ServiceChip("Désherbage", MaterialTheme.colorScheme.tertiary)
             }
@@ -145,7 +171,7 @@ fun ServiceChip(label: String, color: Color) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }
@@ -154,14 +180,24 @@ fun ServiceChip(label: String, color: Color) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AjouterChantierDialog(
+    viewModel: ChantierViewModel,
     onDismissRequest: () -> Unit,
-    onConfirm: (String, String?, Boolean, Boolean, Boolean) -> Unit // Ajout de Boolean pour desherbageActive
+    onConfirm: (nom: String, adresse: String?, tonteActive: Boolean, tailleActive: Boolean, desherbageActive: Boolean, latitude: Double?, longitude: Double?) -> Unit
 ) {
     var nomClient by remember { mutableStateOf("") }
     var adresse by remember { mutableStateOf("") }
     var tonteActive by remember { mutableStateOf(true) }
     var tailleActive by remember { mutableStateOf(true) }
-    var desherbageActive by remember { mutableStateOf(true) } // NOUVEAU état pour le désherbage
+    var desherbageActive by remember { mutableStateOf(true) }
+
+    var latitude by remember { mutableStateOf<Double?>(null) }
+    var longitude by remember { mutableStateOf<Double?>(null) }
+    var geocodingInProgress by remember { mutableStateOf(false) }
+    var geocodingResultMessage by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    // val scope = rememberCoroutineScope() // Non utilisé directement ici
 
     Dialog(onDismissRequest = onDismissRequest) {
         Card(
@@ -173,7 +209,7 @@ fun AjouterChantierDialog(
             Column(
                 modifier = Modifier
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState()), // Permet le défilement
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -181,16 +217,58 @@ fun AjouterChantierDialog(
                 OutlinedTextField(
                     value = nomClient,
                     onValueChange = { nomClient = it },
-                    label = { Text("Nom du client / Chantier") },
+                    label = { Text("Nom du client / Chantier *") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next)
                 )
-                OutlinedTextField(
-                    value = adresse,
-                    onValueChange = { adresse = it },
-                    label = { Text("Adresse (optionnel)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = adresse,
+                        onValueChange = { adresse = it },
+                        label = { Text("Adresse (pour géocodage)") },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+                    )
+                    IconButton(
+                        onClick = {
+                            if (adresse.isNotBlank()) {
+                                focusManager.clearFocus()
+                                geocodingInProgress = true
+                                geocodingResultMessage = "Recherche..."
+                                viewModel.geocodeAdresse(adresse) { latLng -> // Appel au ViewModel
+                                    geocodingInProgress = false
+                                    if (latLng != null) {
+                                        latitude = latLng.latitude
+                                        longitude = latLng.longitude
+                                        geocodingResultMessage = "Coordonnées trouvées !"
+                                    } else {
+                                        latitude = null
+                                        longitude = null
+                                        geocodingResultMessage = "Adresse non trouvée."
+                                    }
+                                }
+                            } else {
+                                Toast.makeText(context, "Veuillez entrer une adresse.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = !geocodingInProgress && adresse.isNotBlank()
+                    ) {
+                        if (geocodingInProgress) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(Icons.Filled.MyLocation, contentDescription = "Obtenir coordonnées")
+                        }
+                    }
+                }
+                geocodingResultMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = if (latitude != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                }
+                if (latitude != null && longitude != null) {
+                    Text("Lat: %.4f, Lng: %.4f".format(latitude, longitude), style = MaterialTheme.typography.bodySmall)
+                }
+
 
                 ServiceActivationRow(
                     label = "Suivi des Tontes Actif",
@@ -202,7 +280,6 @@ fun AjouterChantierDialog(
                     checked = tailleActive,
                     onCheckedChange = { tailleActive = it }
                 )
-                // NOUVEAU: Checkbox pour le service de désherbage
                 ServiceActivationRow(
                     label = "Suivi Désherbage Actif",
                     checked = desherbageActive,
@@ -220,10 +297,10 @@ fun AjouterChantierDialog(
                     Button(
                         onClick = {
                             if (nomClient.isNotBlank()) {
-                                onConfirm(nomClient, adresse.ifBlank { null }, tonteActive, tailleActive, desherbageActive)
+                                onConfirm(nomClient, adresse.ifBlank { null }, tonteActive, tailleActive, desherbageActive, latitude, longitude)
                             }
                         },
-                        enabled = nomClient.isNotBlank()
+                        enabled = nomClient.isNotBlank() && !geocodingInProgress
                     ) {
                         Text("Ajouter")
                     }
@@ -233,15 +310,14 @@ fun AjouterChantierDialog(
     }
 }
 
-// Composable réutilisable pour les lignes d'activation de service
 @Composable
 fun ServiceActivationRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) } // Rend toute la ligne cliquable
-            .padding(vertical = 4.dp) // Un peu de padding vertical
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp)
     ) {
         Checkbox(
             checked = checked,
@@ -249,7 +325,7 @@ fun ServiceActivationRow(label: String, checked: Boolean, onCheckedChange: (Bool
         )
         Text(
             text = label,
-            modifier = Modifier.padding(start = 8.dp) // Espace entre checkbox et texte
+            modifier = Modifier.padding(start = 8.dp)
         )
     }
 }

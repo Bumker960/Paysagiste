@@ -3,7 +3,11 @@ package com.example.suivichantierspaysagiste
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.location.Address // IMPORT POUR Geocoder
+import android.location.Geocoder // IMPORT POUR Geocoder
+import android.os.Build // IMPORT POUR Geocoder API 33+
 import android.provider.CalendarContract
+import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.AndroidViewModel
@@ -18,7 +22,9 @@ import java.util.Date
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.graphics.Color
-import android.util.Log
+import com.google.android.gms.maps.model.LatLng // IMPORT POUR LatLng
+import kotlinx.coroutines.Dispatchers // IMPORT POUR Dispatchers.IO
+import java.io.IOException // IMPORT POUR IOException
 
 // --- Data classes pour l'UI (existantes et nouvelles) ---
 data class TontePrioritaireItem(
@@ -149,7 +155,7 @@ class ChantierViewModel(
             }
             when (sortOrder) {
                 SortOrder.ASC -> items.sortedBy { it.joursEcoules ?: Long.MAX_VALUE }
-                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L } // -1L pour que null soit en dernier
+                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L }
                 SortOrder.NONE -> items.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -222,7 +228,7 @@ class ChantierViewModel(
             }
             when (sortOrder) {
                 SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MIN_VALUE })
-                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: Long.MAX_VALUE }) // MAX_VALUE pour que null soit en dernier
+                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: Long.MAX_VALUE })
                 SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -249,7 +255,7 @@ class ChantierViewModel(
         else repository.countInterventionsOfTypeForChantierFlow(id, "Désherbage")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
 
-    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC) // Par défaut, ASC pour les désherbages (plus urgent en premier)
+    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC)
     val desherbagesSortOrder: StateFlow<SortOrder> = _desherbagesSortOrder.asStateFlow()
 
     val desherbagesPrioritaires: StateFlow<List<DesherbagePrioritaireUiItem>> = combine(
@@ -291,7 +297,7 @@ class ChantierViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
-    // --- CHRONOMÈTRE (Interaction avec ChronomailleurService) ---
+    // --- CHRONOMÈTRE ---
     val interventionEnCoursUi: StateFlow<InterventionEnCoursUi?> =
         ChronomailleurService.serviceState.map { state ->
             when (state) {
@@ -358,23 +364,38 @@ class ChantierViewModel(
 
     fun changerOrdreTriTontes(sortOrder: SortOrder) { _tontesSortOrder.value = sortOrder }
     fun changerOrdreTriTailles(sortOrder: SortOrder) { _taillesSortOrder.value = sortOrder }
-    // AJOUT DE LA MÉTHODE MANQUANTE
     fun changerOrdreTriDesherbages(sortOrder: SortOrder) { _desherbagesSortOrder.value = sortOrder }
 
 
-    fun ajouterChantier(nomClient: String, adresse: String?, serviceTonteActive: Boolean, serviceTailleActive: Boolean, serviceDesherbageActive: Boolean) {
+    // MODIFIÉ pour accepter latitude et longitude
+    fun ajouterChantier(
+        nomClient: String,
+        adresse: String?,
+        serviceTonteActive: Boolean,
+        serviceTailleActive: Boolean,
+        serviceDesherbageActive: Boolean,
+        latitude: Double?, // NOUVEAU
+        longitude: Double? // NOUVEAU
+    ) {
         viewModelScope.launch {
             val chantier = Chantier(
                 nomClient = nomClient,
                 adresse = adresse,
                 serviceTonteActive = serviceTonteActive,
                 serviceTailleActive = serviceTailleActive,
-                serviceDesherbageActive = serviceDesherbageActive
+                serviceDesherbageActive = serviceDesherbageActive,
+                latitude = latitude, // NOUVEAU
+                longitude = longitude // NOUVEAU
             )
             repository.insertChantier(chantier)
         }
     }
-    fun updateChantier(chantier: Chantier) { viewModelScope.launch { repository.updateChantier(chantier) } }
+
+    // MODIFIÉ pour accepter latitude et longitude dans l'objet Chantier
+    fun updateChantier(chantier: Chantier) { // L'objet Chantier contient déjà lat/lng
+        viewModelScope.launch { repository.updateChantier(chantier) }
+    }
+
     fun deleteChantier(chantier: Chantier) { viewModelScope.launch { repository.deleteChantier(chantier) } }
 
 
@@ -470,6 +491,54 @@ class ChantierViewModel(
 
     fun marquerDesherbagePlanifieNonEffectue(planificationId: Long) {
         viewModelScope.launch { repository.markDesherbagePlanifieAsNotDone(planificationId) }
+    }
+
+    // NOUVELLE FONCTION DE GÉOCODAGE
+    fun geocodeAdresse(adresse: String, onResult: (LatLng?) -> Unit) {
+        if (!Geocoder.isPresent()) {
+            Toast.makeText(applicationContext, "Service de géocodage non disponible.", Toast.LENGTH_SHORT).show()
+            onResult(null)
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) { // Exécuter sur un thread d'arrière-plan
+            val geocoder = Geocoder(applicationContext)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    // Pour Android 13 (API 33) et plus
+                    geocoder.getFromLocationName(adresse, 1, object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: MutableList<Address>) {
+                            if (addresses.isNotEmpty()) {
+                                val location = addresses[0]
+                                onResult(LatLng(location.latitude, location.longitude))
+                            } else {
+                                onResult(null)
+                            }
+                        }
+                        override fun onError(errorMessage: String?) {
+                            super.onError(errorMessage)
+                            Log.e("Geocoding", "Erreur de géocodage: $errorMessage")
+                            onResult(null)
+                        }
+                    })
+                } else {
+                    // Pour les versions antérieures à Android 13
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocationName(adresse, 1)
+                    if (addresses != null && addresses.isNotEmpty()) {
+                        val location = addresses[0]
+                        onResult(LatLng(location.latitude, location.longitude))
+                    } else {
+                        onResult(null)
+                    }
+                }
+            } catch (e: IOException) {
+                Log.e("Geocoding", "Erreur réseau ou I/O pendant le géocodage", e)
+                onResult(null)
+            } catch (e: IllegalArgumentException) {
+                Log.e("Geocoding", "Adresse invalide pour le géocodage", e)
+                onResult(null)
+            }
+        }
     }
 
     fun exporterElementVersAgenda(context: Context, item: Any, chantierNom: String) {
