@@ -2,10 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    // Assurez-vous que la version de KSP est compatible avec votre version de Kotlin
-    // id("com.google.devtools.ksp") version "1.9.20-1.0.13" // Exemple, si Kotlin est 1.9.20
-    // Votre version actuelle :
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21" // Gardez cette version si elle fonctionne pour vous
+    id("com.google.devtools.ksp") version "2.0.0-1.0.21" // Gardez votre version KSP actuelle
 }
 
 android {
@@ -16,8 +13,8 @@ android {
         applicationId = "com.example.suivichantierspaysagiste"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1 // Vous pourriez incrémenter ceci si vous faites des releases
-        versionName = "1.0" // Idem
+        versionCode = 1
+        versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -45,7 +42,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.navigation.compose)
-    val lifecycleVersion = "2.8.2" // Ou votre version stable actuelle
+    val lifecycleVersion = "2.8.2"
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
@@ -63,17 +60,20 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    implementation("androidx.compose.material:material-icons-extended:1.6.6") // Votre version actuelle
-    implementation("androidx.datastore:datastore-preferences:1.1.7") // Votre version actuelle
+    implementation("androidx.compose.material:material-icons-extended:1.6.6")
+    implementation("androidx.datastore:datastore-preferences:1.1.7")
 
     // Room Dependencies
-    val room_version = "2.7.1" // Votre version actuelle
+    val room_version = "2.7.1"
     implementation("androidx.room:room-runtime:$room_version")
     ksp("androidx.room:room-compiler:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
 
-    // NOUVELLES DÉPENDANCES POUR GOOGLE MAPS ET LOCALISATION
-    implementation(libs.google.maps.sdk) // Ajouté via libs.versions.toml
-    implementation(libs.google.maps.compose) // Ajouté via libs.versions.toml
-    implementation(libs.google.location.services) // Ajouté via libs.versions.toml
+    // Google Maps et Localisation (existants)
+    implementation(libs.google.maps.sdk)
+    implementation(libs.google.maps.compose)
+    implementation(libs.google.location.services)
+
+    // NOUVELLE DÉPENDANCE pour kotlinx-coroutines-play-services
+    implementation(libs.kotlinx.coroutines.play.services) // Assurez-vous que l'alias est correct (ex: kotlinx.coroutines.play.services)
 }
