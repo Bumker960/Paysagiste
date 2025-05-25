@@ -19,7 +19,7 @@ import androidx.compose.material.icons.filled.Grass // Tonte
 import androidx.compose.material.icons.filled.ContentCut // Taille
 import androidx.compose.material.icons.filled.Spa // Icône pour Désherbage
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.LocationOn // NOUVELLE ICÔNE POUR LA CARTE
+import androidx.compose.material.icons.filled.LocationOn // ICÔNE POUR LA CARTE
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,24 +49,24 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 
-// Définition des écrans pour la barre de navigation
+// Définition des écrans pour la barre de navigation (inchangé)
 sealed class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
     object Chantiers : BottomNavItem(ScreenDestinations.CHANTIER_LIST_ROUTE, "Chantiers", Icons.Filled.List)
     object TontesPrio : BottomNavItem(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE, "Tontes Prio.", Icons.Filled.Grass)
     object TaillesPrio : BottomNavItem(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE, "Tailles Prio.", Icons.Filled.ContentCut)
     object DesherbagesPrio : BottomNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage", Icons.Filled.Spa)
-    object Carte : BottomNavItem(ScreenDestinations.MAP_ROUTE, "Carte", Icons.Filled.LocationOn) // NOUVEL ITEM POUR LA CARTE
+    object Carte : BottomNavItem(ScreenDestinations.MAP_ROUTE, "Carte", Icons.Filled.LocationOn)
     object Reglages : BottomNavItem(ScreenDestinations.SETTINGS_ROUTE, "Réglages", Icons.Filled.Settings)
 }
 
-// Définition de nos couleurs modernes
-object ModernColors { // Cet objet était déjà défini, je le garde tel quel
+// Définition de nos couleurs modernes (inchangé)
+object ModernColors {
     val barBackground = Color(0xFF004D40)
     val selectedContent = Color.White
     val unselectedContent = Color(0xFFB2DFDB)
 }
 
-// Définition des schémas de couleurs (existants)
+// Définition des schémas de couleurs (inchangés)
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF558B2F),
     secondary = Color(0xFF8BC34A),
@@ -152,9 +152,8 @@ class MainActivity : ComponentActivity() {
                 colorScheme = colors
             ) {
                 AppNavigation(
-                    chantierViewModel = chantierViewModel,
+                    chantierViewModel = chantierViewModel, // Passé ici
                     settingsViewModel = settingsViewModel
-                    // Le MapViewModel sera ajouté plus tard si nécessaire, ou ses fonctions intégrées au ChantierViewModel
                 )
             }
         }
@@ -180,24 +179,20 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavigation(
-    chantierViewModel: ChantierViewModel,
+    chantierViewModel: ChantierViewModel, // Reçu ici
     settingsViewModel: SettingsViewModel
-    // mapViewModel: MapViewModel // Sera ajouté plus tard si on crée un ViewModel dédié pour la carte
 ) {
     val navController: NavHostController = rememberNavController()
-    val context = LocalContext.current
+    // val context = LocalContext.current // Non utilisé directement ici
 
-    LaunchedEffect(Unit) {
-        // La logique de demande de permission est gérée dans onCreate de MainActivity
-    }
+    // LaunchedEffect(Unit) { } // Peut être supprimé si vide
 
-    // MISE À JOUR de la liste pour inclure l'onglet Carte
     val bottomNavItems = listOf(
         BottomNavItem.Chantiers,
         BottomNavItem.TontesPrio,
         BottomNavItem.TaillesPrio,
         BottomNavItem.DesherbagesPrio,
-        BottomNavItem.Carte, // AJOUT DE L'ONGLET CARTE ICI
+        BottomNavItem.Carte,
         BottomNavItem.Reglages
     )
 
@@ -218,25 +213,18 @@ fun AppNavigation(
                         selected = isSelected,
                         onClick = {
                             val targetRoute = screen.route
-                            // La logique de navigation existante est conservée, elle devrait bien gérer le nouvel onglet.
                             if (currentDestination?.route != targetRoute) {
                                 navController.navigate(targetRoute) {
                                     popUpTo(navController.graph.findStartDestination().id) {
-                                        // Pour l'onglet Chantiers, on veut pouvoir revenir à la liste depuis un détail
-                                        // Pour les autres, on sauvegarde l'état.
                                         saveState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
-                                        // Si on va vers la liste des chantiers et qu'on n'y est pas déjà (ou sur un détail),
-                                        // on pop jusqu'au début en incluant la destination actuelle si on était sur un détail.
                                         inclusive = targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true
                                     }
                                     launchSingleTop = true
                                     restoreState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
                                 }
                             } else if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
-                                // Si on est sur un détail et qu'on clique sur l'onglet Chantiers, on revient à la liste
                                 navController.popBackStack(ScreenDestinations.CHANTIER_LIST_ROUTE, inclusive = false)
                             }
-                            // Si on clique sur l'onglet Chantiers et qu'on est déjà sur la liste des chantiers, on s'assure de vider le chantierId sélectionné
                             if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE) {
                                 chantierViewModel.clearSelectedChantierId()
                             }
@@ -246,7 +234,7 @@ fun AppNavigation(
                             selectedTextColor = ModernColors.selectedContent,
                             unselectedIconColor = ModernColors.unselectedContent,
                             unselectedTextColor = ModernColors.unselectedContent,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) // Couleur de l'indicateur
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                         )
                     )
                 }
@@ -291,12 +279,8 @@ fun AppNavigation(
                     navController = navController
                 )
             }
-            // NOUVELLE DESTINATION POUR L'ÉCRAN CARTE
             composable(route = ScreenDestinations.MAP_ROUTE) {
-                // Pour l'instant, un placeholder. Nous créerons MapScreen.kt ensuite.
-                // MapScreen(chantierViewModel = chantierViewModel /*, mapViewModel = mapViewModel */)
-                // Temporairement :
-                MapScreen(/*chantierViewModel = chantierViewModel*/) // Décommentez le ViewModel si/quand nécessaire
+                MapScreen(chantierViewModel = chantierViewModel, navController = navController) // MODIFIÉ ICI pour passer le ViewModel et navController
             }
         }
     }
