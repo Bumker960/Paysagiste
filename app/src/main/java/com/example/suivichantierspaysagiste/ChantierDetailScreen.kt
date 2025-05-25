@@ -1,6 +1,6 @@
 package com.example.suivichantierspaysagiste
 
-import android.content.Context // Ajout pour l'Intent
+import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,17 +10,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Event // Pour les dates planifiées et l'icône d'agenda initiale
-import androidx.compose.material.icons.filled.Done // Pour marquer comme fait
-import androidx.compose.material.icons.filled.EventAvailable // Icône pour "exporté vers agenda"
-import androidx.compose.material.icons.filled.EventNote // Alternative pour "ajouter à l'agenda"
-// import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext // Ajout pour obtenir le contexte
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -65,25 +64,23 @@ fun ChantierDetailScreen(
     }
 
     val chantier by viewModel.selectedChantier.collectAsStateWithLifecycle()
-    val interventions by viewModel.interventionsDuChantier.collectAsStateWithLifecycle() // Contient maintenant `exporteAgenda`
-    val desherbagesPlanifies by viewModel.desherbagesPlanifiesDuChantier.collectAsStateWithLifecycle() // Contient maintenant `exporteAgenda`
+    val interventions by viewModel.interventionsDuChantier.collectAsStateWithLifecycle()
+    val desherbagesPlanifies by viewModel.desherbagesPlanifiesDuChantier.collectAsStateWithLifecycle()
 
-    // Tonte
     val derniereTonte by viewModel.derniereTonte.collectAsStateWithLifecycle()
     val nombreTotalTontes by viewModel.nombreTotalTontes.collectAsStateWithLifecycle()
     val tonteUrgencyColor by viewModel.selectedChantierTonteUrgencyColor.collectAsStateWithLifecycle()
-    // Taille
     val derniereTaille by viewModel.derniereTaille.collectAsStateWithLifecycle()
     val nombreTotalTailles by viewModel.nombreTotalTailles.collectAsStateWithLifecycle()
     val nombreTaillesCetteAnnee by viewModel.nombreTaillesCetteAnnee.collectAsStateWithLifecycle()
     val tailleUrgencyColor by viewModel.selectedChantierTailleUrgencyColor.collectAsStateWithLifecycle()
-    // Désherbage
     val prochainDesherbagePlanifie by viewModel.prochainDesherbagePlanifie.collectAsStateWithLifecycle()
     val desherbageUrgencyColor by viewModel.selectedChantierDesherbageUrgencyColor.collectAsStateWithLifecycle()
     val nombreTotalDesherbagesEffectues by viewModel.nombreTotalDesherbagesEffectues.collectAsStateWithLifecycle()
 
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
+    val dateTimeFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE) }
     var showEditChantierDialog by remember { mutableStateOf(false) }
     var showDeleteChantierConfirmDialog by remember { mutableStateOf(false) }
     var interventionASupprimer by remember { mutableStateOf<Intervention?>(null) }
@@ -107,7 +104,27 @@ fun ChantierDetailScreen(
     var desherbagePlanifieAModifier by remember { mutableStateOf<DesherbagePlanifie?>(null) }
     var desherbagePlanifieASupprimerId by remember { mutableStateOf<Long?>(null) }
 
-    val context = LocalContext.current // Obtenir le contexte pour l'Intent
+    val context = LocalContext.current
+
+    fun combineDateWithCurrentTime(selectedDateMillisUtc: Long): Date {
+        val selectedDateCalendarUtc = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        selectedDateCalendarUtc.timeInMillis = selectedDateMillisUtc
+
+        val currentTimeCalendarLocal = Calendar.getInstance()
+
+        val combinedCalendarLocal = Calendar.getInstance()
+        combinedCalendarLocal.set(
+            selectedDateCalendarUtc.get(Calendar.YEAR),
+            selectedDateCalendarUtc.get(Calendar.MONTH),
+            selectedDateCalendarUtc.get(Calendar.DAY_OF_MONTH),
+            currentTimeCalendarLocal.get(Calendar.HOUR_OF_DAY),
+            currentTimeCalendarLocal.get(Calendar.MINUTE),
+            currentTimeCalendarLocal.get(Calendar.SECOND)
+        )
+        combinedCalendarLocal.set(Calendar.MILLISECOND, currentTimeCalendarLocal.get(Calendar.MILLISECOND))
+        return combinedCalendarLocal.time
+    }
+
 
     Column(
         modifier = Modifier
@@ -148,10 +165,9 @@ fun ChantierDetailScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Section Tontes
             if (currentChantier.serviceTonteActive) {
                 ServiceSectionHeader("Suivi des Tontes")
-                InfoLine("Dernière tonte:", derniereTonte?.dateIntervention?.let { "${dateFormat.format(it)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - it.time)}j)" } ?: "Aucune", tonteUrgencyColor)
+                InfoLine("Dernière tonte:", derniereTonte?.dateIntervention?.let { "${dateTimeFormat.format(it)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - it.time)}j)" } ?: "Aucune", tonteUrgencyColor)
                 InfoLine("Nombre total de tontes:", "$nombreTotalTontes")
                 Button(
                     onClick = { interventionTypeForNotes = null; planificationLieeIdForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; showTonteDatePickerDialog = true },
@@ -169,16 +185,15 @@ fun ChantierDetailScreen(
                             interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""
                         },
                         onCancel = { interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = "" },
-                        dateFormat = dateFormat
+                        dateFormat = dateTimeFormat
                     )
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Section Tailles
             if (currentChantier.serviceTailleActive) {
                 ServiceSectionHeader("Suivi des Tailles de Haie")
-                InfoLine("Dernière taille:", derniereTaille?.dateIntervention?.let { "${dateFormat.format(it)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - it.time)}j)" } ?: "Aucune", tailleUrgencyColor)
+                InfoLine("Dernière taille:", derniereTaille?.dateIntervention?.let { "${dateTimeFormat.format(it)} (${TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - it.time)}j)" } ?: "Aucune", tailleUrgencyColor)
                 InfoLine("Nombre total de tailles:", "$nombreTotalTailles")
                 InfoLine("Tailles cette année:", "$nombreTaillesCetteAnnee / 2")
                 Button(
@@ -197,13 +212,12 @@ fun ChantierDetailScreen(
                             interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""
                         },
                         onCancel = { interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = "" },
-                        dateFormat = dateFormat
+                        dateFormat = dateTimeFormat
                     )
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // Section Désherbage
             if (currentChantier.serviceDesherbageActive) {
                 ServiceSectionHeader("Suivi du Désherbage")
                 InfoLine("Prochain désherbage planifié:", prochainDesherbagePlanifie?.datePlanifiee?.let { dateFormat.format(it) } ?: "Aucun planifié", desherbageUrgencyColor)
@@ -231,7 +245,7 @@ fun ChantierDetailScreen(
                             interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; planificationLieeIdForNotes = null
                         },
                         onCancel = { interventionTypeForNotes = null; selectedDateForNotes = null; currentInterventionNotes = ""; planificationLieeIdForNotes = null},
-                        dateFormat = dateFormat,
+                        dateFormat = dateTimeFormat,
                         planificationLiee = desherbagesPlanifies.find { it.id == planificationLieeIdForNotes }
                     )
                 }
@@ -245,8 +259,9 @@ fun ChantierDetailScreen(
                             planification = planif,
                             dateFormat = dateFormat,
                             onMarkAsDone = {
+                                val datePlanifieeMillis = planif.datePlanifiee.time
+                                selectedDateForNotes = combineDateWithCurrentTime(datePlanifieeMillis)
                                 planificationLieeIdForNotes = planif.id
-                                selectedDateForNotes = planif.datePlanifiee
                                 interventionTypeForNotes = "Désherbage"
                                 currentInterventionNotes = planif.notesPlanification ?: ""
                             },
@@ -277,7 +292,7 @@ fun ChantierDetailScreen(
                     interventions.forEach { intervention ->
                         InterventionHistoriqueItem(
                             intervention = intervention,
-                            dateFormat = dateFormat,
+                            dateFormat = dateTimeFormat,
                             onEditNote = { interventionAModifierNote = intervention; showEditNoteDialog = true },
                             onDelete = { interventionASupprimer = intervention },
                             onExportToCalendar = {
@@ -291,7 +306,6 @@ fun ChantierDetailScreen(
         }
     }
 
-    // ---- DIALOGUES ----
     if (showEditChantierDialog && chantier != null) {
         EditChantierDialog(
             chantierInitial = chantier!!,
@@ -310,7 +324,7 @@ fun ChantierDetailScreen(
             onConfirm = {
                 viewModel.deleteChantier(chantier!!)
                 showDeleteChantierConfirmDialog = false
-                navController.popBackStack() // Revenir à l'écran précédent après suppression
+                navController.popBackStack()
             },
             onDismiss = { showDeleteChantierConfirmDialog = false }
         )
@@ -320,7 +334,7 @@ fun ChantierDetailScreen(
         val interventionPourDialogue = interventionASupprimer!!
         ConfirmDeleteDialog(
             title = "Confirmer la suppression",
-            text = "Êtes-vous sûr de vouloir supprimer l'intervention : ${interventionPourDialogue.typeIntervention} du ${dateFormat.format(interventionPourDialogue.dateIntervention)} ?",
+            text = "Êtes-vous sûr de vouloir supprimer l'intervention : ${interventionPourDialogue.typeIntervention} du ${dateTimeFormat.format(interventionPourDialogue.dateIntervention)} ?",
             onConfirm = {
                 viewModel.deleteIntervention(interventionPourDialogue)
                 interventionASupprimer = null
@@ -336,13 +350,41 @@ fun ChantierDetailScreen(
             onConfirm = { nouvellesNotes ->
                 viewModel.updateInterventionNotes(interventionAModifierNote!!, nouvellesNotes)
                 showEditNoteDialog = false; interventionAModifierNote = null
-            }
+            },
+            dateTimeFormat = dateTimeFormat
         )
     }
 
-    if (showTonteDatePickerDialog) { DatePickerDialogIntervention(state = tonteDatePickerState, onDismiss = { showTonteDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Tonte de pelouse"; currentInterventionNotes = ""; showTonteDatePickerDialog = false }) }
-    if (showTailleDatePickerDialog) { DatePickerDialogIntervention(state = tailleDatePickerState, onDismiss = { showTailleDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Taille de haie"; currentInterventionNotes = ""; showTailleDatePickerDialog = false }) }
-    if (showDesherbageInterventionDatePickerDialog) { DatePickerDialogIntervention(state = desherbageInterventionDatePickerState, onDismiss = { showDesherbageInterventionDatePickerDialog = false }, onConfirm = { millis -> selectedDateForNotes = Date(millis); interventionTypeForNotes = "Désherbage"; currentInterventionNotes = ""; showDesherbageInterventionDatePickerDialog = false }) }
+    if (showTonteDatePickerDialog) {
+        DatePickerDialogIntervention(
+            state = tonteDatePickerState,
+            onDismiss = { showTonteDatePickerDialog = false },
+            onConfirm = { millis ->
+                selectedDateForNotes = combineDateWithCurrentTime(millis)
+                interventionTypeForNotes = "Tonte de pelouse"; currentInterventionNotes = ""; showTonteDatePickerDialog = false
+            }
+        )
+    }
+    if (showTailleDatePickerDialog) {
+        DatePickerDialogIntervention(
+            state = tailleDatePickerState,
+            onDismiss = { showTailleDatePickerDialog = false },
+            onConfirm = { millis ->
+                selectedDateForNotes = combineDateWithCurrentTime(millis)
+                interventionTypeForNotes = "Taille de haie"; currentInterventionNotes = ""; showTailleDatePickerDialog = false
+            }
+        )
+    }
+    if (showDesherbageInterventionDatePickerDialog) {
+        DatePickerDialogIntervention(
+            state = desherbageInterventionDatePickerState,
+            onDismiss = { showDesherbageInterventionDatePickerDialog = false },
+            onConfirm = { millis ->
+                selectedDateForNotes = combineDateWithCurrentTime(millis)
+                interventionTypeForNotes = "Désherbage"; currentInterventionNotes = ""; showDesherbageInterventionDatePickerDialog = false
+            }
+        )
+    }
 
 
     if (showPlanifierDesherbageDialog && chantier != null) {
@@ -375,6 +417,7 @@ fun ChantierDetailScreen(
     }
 }
 
+// --- Définitions des composables qui manquaient ---
 @Composable
 fun ServiceSectionHeader(title: String) {
     Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
@@ -388,6 +431,8 @@ fun InfoLine(label: String, value: String, color: Color = LocalContentColor.curr
         Text(value, color = color)
     }
 }
+// --- Fin des définitions des composables qui manquaient ---
+
 
 @Composable
 fun InterventionHistoriqueItem(
@@ -395,14 +440,14 @@ fun InterventionHistoriqueItem(
     dateFormat: SimpleDateFormat,
     onEditNote: () -> Unit,
     onDelete: () -> Unit,
-    onExportToCalendar: () -> Unit // Nouvelle fonction pour l'export
+    onExportToCalendar: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top // Changé à Top pour mieux aligner les icônes avec le texte
+        verticalAlignment = Alignment.Top
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text("${intervention.typeIntervention} - ${dateFormat.format(intervention.dateIntervention)}")
@@ -415,7 +460,7 @@ fun InterventionHistoriqueItem(
                 )
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) { // Ajout pour centrer les icônes verticalement
+        Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onExportToCalendar, modifier = Modifier.size(36.dp)) {
                 Icon(
                     imageVector = if (intervention.exporteAgenda) Icons.Filled.EventAvailable else Icons.Filled.EventNote,
@@ -479,12 +524,12 @@ fun InterventionNotesInputSection(
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                "Date: ${dateFormat.format(selectedDate)}",
+                "Date et heure: ${dateFormat.format(selectedDate)}",
                 style = MaterialTheme.typography.bodyMedium
             )
             if (planificationLiee != null) {
                 Text(
-                    "Lié à la planification du: ${dateFormat.format(planificationLiee.datePlanifiee)}",
+                    "Lié à la planification du: ${SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(planificationLiee.datePlanifiee)}",
                     style = MaterialTheme.typography.bodySmall,
                     fontStyle = FontStyle.Italic
                 )
@@ -534,9 +579,11 @@ fun EditChantierDialog(
                 OutlinedTextField(value = nomClient, onValueChange = { nomClient = it }, label = { Text("Nom du client / Chantier") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = adresse, onValueChange = { adresse = it }, label = { Text("Adresse (optionnel)") }, modifier = Modifier.fillMaxWidth())
 
+                // Utilisation de ServiceActivationRow défini dans ChantierScreen.kt (ou un fichier partagé)
                 ServiceActivationRow(label = "Suivi des Tontes Actif", checked = tonteActive, onCheckedChange = { tonteActive = it })
                 ServiceActivationRow(label = "Suivi des Tailles Actif", checked = tailleActive, onCheckedChange = { tailleActive = it })
                 ServiceActivationRow(label = "Suivi Désherbage Actif", checked = desherbageActive, onCheckedChange = { desherbageActive = it })
+
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismissRequest) { Text("Annuler") }
@@ -566,17 +613,17 @@ fun EditChantierDialog(
 fun EditInterventionNoteDialog(
     intervention: Intervention,
     onDismissRequest: () -> Unit,
-    onConfirm: (String?) -> Unit
+    onConfirm: (String?) -> Unit,
+    dateTimeFormat: SimpleDateFormat
 ) {
     var notesText by remember(intervention.notes) { mutableStateOf(intervention.notes ?: "") }
-    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text("Modifier la note") },
         text = {
             Column {
-                Text("Intervention: ${intervention.typeIntervention} du ${dateFormat.format(intervention.dateIntervention)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp))
+                Text("Intervention: ${intervention.typeIntervention} du ${dateTimeFormat.format(intervention.dateIntervention)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp))
                 OutlinedTextField(value = notesText, onValueChange = { notesText = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5)
             }
         },
@@ -603,7 +650,7 @@ fun DesherbagePlanifieItem(
     onMarkAsDone: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onExportToCalendar: () -> Unit // Nouvelle fonction pour l'export
+    onExportToCalendar: () -> Unit
 ) {
     val itemColor = if (planification.estEffectue) MaterialTheme.colorScheme.outline.copy(alpha = 0.7f) else LocalContentColor.current
     val textStyle = if (planification.estEffectue) MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic) else MaterialTheme.typography.bodyMedium
@@ -635,8 +682,7 @@ fun DesherbagePlanifieItem(
                 }
             }
         }
-        // --- Icônes d'action ---
-        if (!planification.estEffectue) { // L'export agenda est pertinent même si non effectué
+        if (!planification.estEffectue) {
             IconButton(onClick = onExportToCalendar, modifier = Modifier.size(36.dp)) {
                 Icon(
                     imageVector = if (planification.exporteAgenda) Icons.Filled.EventAvailable else Icons.Filled.EventNote,
@@ -647,12 +693,12 @@ fun DesherbagePlanifieItem(
             IconButton(onClick = onMarkAsDone, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Filled.Done, contentDescription = "Marquer comme effectué et enregistrer intervention", tint = MaterialTheme.colorScheme.primary)
             }
-        } else { // Si déjà effectué, on peut toujours vouloir l'exporter (ex: pour archive)
+        } else {
             IconButton(onClick = onExportToCalendar, modifier = Modifier.size(36.dp)) {
                 Icon(
                     imageVector = if (planification.exporteAgenda) Icons.Filled.EventAvailable else Icons.Filled.EventNote,
                     contentDescription = if (planification.exporteAgenda) "Exporté vers l'agenda" else "Ajouter à l'agenda",
-                    tint = if (planification.exporteAgenda) MaterialTheme.colorScheme.primary else itemColor // Utilise itemColor si effectué
+                    tint = if (planification.exporteAgenda) MaterialTheme.colorScheme.primary else itemColor
                 )
             }
         }
@@ -682,7 +728,6 @@ fun PlanifierDesherbageDialog(
         selectableDates = AllDatesSelectableDates
     )
     var showDatePicker by remember { mutableStateOf(false) }
-    // Utiliser selectedDateMillis directement ou une variable temporaire mise à jour dans onConfirm du DatePicker
     var tempSelectedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis ?: System.currentTimeMillis()) }
 
 
@@ -733,3 +778,9 @@ fun PlanifierDesherbageDialog(
         }
     }
 }
+
+// Note: ServiceActivationRow n'est plus défini ici,
+// il utilisera celui de ChantierScreen.kt
+// Si ChantierScreen.kt ne le définit pas comme public top-level,
+// il faudra le déplacer ici ou dans un fichier partagé.
+// Pour l'instant, on suppose qu'il est accessible.
