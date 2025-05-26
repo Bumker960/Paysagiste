@@ -17,8 +17,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height // Pour espacer les FABs
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Grass // Icône pour Tonte
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.NearMe // Icône pour "chantier le plus proche"
+import androidx.compose.material.icons.filled.NearMe // Icône pour "chantier le plus proche" (générique)
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -75,7 +76,7 @@ fun MapScreen(
         tousLesChantiers.filter { it.latitude != null && it.longitude != null }
     }
 
-    val defaultCameraPosition = LatLng(46.2276, 2.2137)
+    val defaultCameraPosition = LatLng(46.2276, 2.2137) // Centre de la France
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(defaultCameraPosition, 5f)
     }
@@ -88,7 +89,6 @@ fun MapScreen(
         )
     }
 
-    // État pour suivre quel marqueur est "sélectionné" pour afficher l'info-bulle
     var selectedMarkerState: MarkerState? by remember { mutableStateOf(null) }
 
 
@@ -120,13 +120,16 @@ fun MapScreen(
         } else {
             scope.launch {
                 userLocation = getLastKnownLocation(context, fusedLocationClient)
-                userLocation?.let {
-                    cameraPositionState.animate(
-                        CameraUpdateFactory.newCameraPosition(
-                            CameraPosition.fromLatLngZoom(it, 12f)
-                        ),
-                        1000
-                    )
+                // Centrer sur l'utilisateur seulement si aucun chantier n'est déjà affiché ou si la carte est à sa position par défaut
+                if (cameraPositionState.position.target == defaultCameraPosition || chantiersAvecCoordonnees.isEmpty()) {
+                    userLocation?.let {
+                        cameraPositionState.animate(
+                            CameraUpdateFactory.newCameraPosition(
+                                CameraPosition.fromLatLngZoom(it, 12f)
+                            ),
+                            1000
+                        )
+                    }
                 }
             }
         }
@@ -142,65 +145,34 @@ fun MapScreen(
     val uiSettings by remember {
         mutableStateOf(
             MapUiSettings(
-                myLocationButtonEnabled = false,
+                myLocationButtonEnabled = false, // On utilise notre propre FAB
                 zoomControlsEnabled = true,
                 compassEnabled = true,
-                mapToolbarEnabled = false // Désactiver la barre d'outils Google Maps au clic sur marqueur
+                mapToolbarEnabled = false
             )
         )
     }
 
-    fun findNearestChantier() {
+    fun findAndShowNearestMowingSite() {
         if (!hasLocationPermission || userLocation == null) {
             Toast.makeText(context, "Position utilisateur inconnue ou permission refusée.", Toast.LENGTH_SHORT).show()
             if (!hasLocationPermission) locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             return
         }
-        if (chantiersAvecCoordonnees.isEmpty()) {
-            Toast.makeText(context, "Aucun chantier avec coordonnées disponible.", Toast.LENGTH_SHORT).show()
-            return
-        }
 
-        val currentUserLocation = Location("").apply {
-            latitude = userLocation!!.latitude
-            longitude = userLocation!!.longitude
-        }
-
-        var nearestChantier: Chantier? = null
-        var minDistance = Float.MAX_VALUE
-
-        chantiersAvecCoordonnees.forEach { chantier ->
-            val chantierLocation = Location("").apply {
-                latitude = chantier.latitude!!
-                longitude = chantier.longitude!!
+        chantierViewModel.findNearestMowingSite(userLocation!!) { result ->
+            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+            result.latLng?.let { siteLatLng ->
+                scope.launch {
+                    cameraPositionState.animate(
+                        CameraUpdateFactory.newLatLngZoom(siteLatLng, 15f),
+                        1000
+                    )
+                }
+                // Mettre en évidence le marqueur ou ouvrir l'info-bulle si possible
+                // Pour l'instant, on se contente de centrer la carte et d'afficher le Toast.
+                // On pourrait essayer de trouver le MarkerState correspondant si on les stockait.
             }
-            val distance = currentUserLocation.distanceTo(chantierLocation) // Distance en mètres
-            if (distance < minDistance) {
-                minDistance = distance
-                nearestChantier = chantier
-            }
-        }
-
-        nearestChantier?.let {
-            val chantierLatLng = LatLng(it.latitude!!, it.longitude!!)
-            scope.launch {
-                cameraPositionState.animate(
-                    CameraUpdateFactory.newLatLngZoom(chantierLatLng, 15f),
-                    1000
-                )
-            }
-            // Trouver l'état du marqueur correspondant pour le "sélectionner"
-            // Ceci est une simplification ; une meilleure approche nécessiterait de stocker les MarkerStates
-            // ou de trouver un moyen d'ouvrir l'info-bulle programmatiquement via l'API GoogleMap.
-            // Pour l'instant, on affiche un Toast.
-            val distanceKm = minDistance / 1000f
-            val df = DecimalFormat("#.##")
-            Toast.makeText(context, "Chantier le plus proche: ${it.nomClient} à ${df.format(distanceKm)} km", Toast.LENGTH_LONG).show()
-
-            // Alternative: Mettre à jour un état pour que le Marker concerné s'affiche différemment ou ouvre son info-bulle.
-            // selectedMarkerState = MarkerState(position = chantierLatLng) // Ne fonctionne pas directement pour ouvrir info-bulle.
-            // L'API Compose Maps actuelle ne permet pas d'ouvrir une info-bulle par programmation aussi facilement.
-            // La navigation vers les détails au clic sur l'info-bulle reste la méthode principale d'interaction après sélection.
         }
     }
 
@@ -233,21 +205,21 @@ fun MapScreen(
                                 }
                             }
                         },
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer, // Couleur distincte
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Icon(Icons.Filled.MyLocation, contentDescription = "Centrer sur ma position")
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(16.dp)) // Espace entre les FABs
-
-                    FloatingActionButton(
-                        onClick = { findNearestChantier() },
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ) {
-                        Icon(Icons.Filled.NearMe, contentDescription = "Trouver chantier le plus proche")
-                    }
+                // FAB pour "Chantier de tonte le plus proche"
+                FloatingActionButton(
+                    onClick = { findAndShowNearestMowingSite() },
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer, // Couleur distincte
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                ) {
+                    Icon(Icons.Filled.Grass, contentDescription = "Chantier de tonte le plus proche")
                 }
             }
         }
@@ -263,26 +235,34 @@ fun MapScreen(
                 properties = mapProperties,
                 uiSettings = uiSettings,
                 onMapLoaded = {
-                    if (chantiersAvecCoordonnees.isNotEmpty() && userLocation == null) {
+                    if (chantiersAvecCoordonnees.isNotEmpty() && userLocation == null && cameraPositionState.position.target == defaultCameraPosition) {
                         val firstChantierLatLng = LatLng(chantiersAvecCoordonnees.first().latitude!!, chantiersAvecCoordonnees.first().longitude!!)
                         cameraPositionState.move(CameraUpdateFactory.newLatLngZoom(firstChantierLatLng, 10f))
                     }
                 }
             ) {
                 chantiersAvecCoordonnees.forEach { chantier ->
-                    // Créer un MarkerState pour chaque marqueur pour potentiellement le contrôler
                     val markerState = rememberMarkerState(position = LatLng(chantier.latitude!!, chantier.longitude!!))
+                    var iconColor = BitmapDescriptorFactory.HUE_GREEN // Couleur par défaut
+
+                    // Déterminer la couleur du marqueur en fonction de l'urgence de la tonte
+                    // Cette logique doit être synchrone ou pré-calculée.
+                    // Pour une solution simple, on pourrait récupérer l'état d'urgence ici,
+                    // mais cela peut être moins performant. Idéalement, `chantier` contiendrait déjà cette info.
+                    // Pour l'instant, laissons la couleur par défaut ou une couleur basée sur le service actif.
+                    if (chantier.serviceTonteActive) iconColor = BitmapDescriptorFactory.HUE_GREEN
+                    if (chantier.serviceTailleActive && !chantier.serviceTonteActive) iconColor = BitmapDescriptorFactory.HUE_ORANGE // Exemple
+                    if (chantier.serviceDesherbageActive && !chantier.serviceTonteActive && !chantier.serviceTailleActive) iconColor = BitmapDescriptorFactory.HUE_YELLOW // Exemple
+
 
                     Marker(
                         state = markerState,
                         title = chantier.nomClient,
                         snippet = chantier.adresse ?: "Aucune adresse",
-                        // icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN), // Option de couleur
+                        icon = BitmapDescriptorFactory.defaultMarker(iconColor),
                         onClick = {
-                            // Au clic sur le marqueur, l'info-bulle s'affiche par défaut.
-                            // On peut stocker ce markerState si on veut le manipuler (mais l'API est limitée pour cela).
                             selectedMarkerState = markerState
-                            false // Retourner false pour indiquer que l'on n'a pas consommé l'événement, laissant Google Maps afficher l'info-bulle.
+                            false
                         },
                         onInfoWindowClick = {
                             navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${chantier.id}")
@@ -294,7 +274,6 @@ fun MapScreen(
     }
 }
 
-// La fonction getLastKnownLocation reste inchangée
 @SuppressLint("MissingPermission")
 suspend fun getLastKnownLocation(context: Context, fusedLocationClient: FusedLocationProviderClient): LatLng? {
     if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
@@ -304,11 +283,13 @@ suspend fun getLastKnownLocation(context: Context, fusedLocationClient: FusedLoc
     }
 
     return try {
+        // Essayer d'abord getCurrentLocation pour une position plus fraîche
         val locationResult = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
         locationResult?.let { location ->
             Log.d("MapScreen", "Position actuelle obtenue: Lat ${location.latitude}, Lng ${location.longitude}")
             LatLng(location.latitude, location.longitude)
         } ?: run {
+            // Si getCurrentLocation échoue, utiliser lastLocation comme fallback
             val lastLocation = fusedLocationClient.lastLocation.await()
             lastLocation?.let {
                 Log.d("MapScreen", "Dernière position connue obtenue: Lat ${it.latitude}, Lng ${it.longitude}")
