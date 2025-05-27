@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -48,6 +49,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration // Import pour obtenir la largeur de l'écran
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -60,7 +63,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
-import androidx.compose.ui.unit.dp // Assurez-vous que dp est importé
 
 // Éléments pour la barre de navigation inférieure
 sealed class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
@@ -80,7 +82,7 @@ sealed class DrawerNavItem(val route: String, val label: String, val icon: Image
 
 // Définition de nos couleurs modernes
 object ModernColors {
-    val barBackground = Color(0xFF004D40) // Utilisé pour la BottomBar et potentiellement TopAppBar/Drawer
+    val barBackground = Color(0xFF004D40)
     val selectedContent = Color.White
     val unselectedContent = Color(0xFFB2DFDB)
 }
@@ -91,12 +93,12 @@ private val DarkColorScheme = darkColorScheme(
     secondary = Color(0xFF8BC34A),
     tertiary = Color(0xFFAED581),
     background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E), // Utilisé par défaut par le DrawerSheet
+    surface = Color(0xFF1E1E1E),
     onPrimary = Color.White,
     onSecondary = Color.Black,
     onTertiary = Color.Black,
     onBackground = Color.White,
-    onSurface = Color.White, // Texte dans le DrawerSheet
+    onSurface = Color.White,
     primaryContainer = ModernColors.barBackground,
     onPrimaryContainer = ModernColors.selectedContent
 )
@@ -106,12 +108,12 @@ private val LightColorScheme = lightColorScheme(
     secondary = Color(0xFF689F38),
     tertiary = Color(0xFF9CCC65),
     background = Color(0xFFFFFFFF),
-    surface = Color(0xFFF5F5F5), // Utilisé par défaut par le DrawerSheet
+    surface = Color(0xFFF5F5F5),
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color.Black,
     onBackground = Color.Black,
-    onSurface = Color.Black, // Texte dans le DrawerSheet
+    onSurface = Color.Black,
     primaryContainer = ModernColors.barBackground,
     onPrimaryContainer = ModernColors.selectedContent
 )
@@ -197,7 +199,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun GetCurrentScreenTitle(route: String?, chantierViewModel: ChantierViewModel): String {
-    // Lit l'état du chantier sélectionné ici si nécessaire pour le titre
     val selectedChantier by chantierViewModel.selectedChantier.collectAsStateWithLifecycle()
 
     return when {
@@ -210,8 +211,7 @@ fun GetCurrentScreenTitle(route: String?, chantierViewModel: ChantierViewModel):
         route == ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE -> "Désherbages Prioritaires"
         route == ScreenDestinations.SETTINGS_ROUTE -> "Réglages"
         route == ScreenDestinations.MAP_ROUTE -> "Carte des Chantiers"
-        // route == ScreenDestinations.ACCUEIL_ROUTE -> "Accueil" // Pour la future page d'accueil
-        else -> "SP" // Nom par défaut de l'app
+        else -> "SP"
     }
 }
 
@@ -225,12 +225,14 @@ fun AppNavigationWithDrawer(
     val navController: NavHostController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current // Pour obtenir la largeur de l'écran
+    val drawerWidth = configuration.screenWidthDp.dp / 1.5f // Ajuster le diviseur pour la largeur souhaitée (ex: 1.5f pour un peu plus de la moitié, 2f pour la moitié)
+
 
     val bottomNavItems = listOf(
         BottomNavItem.Chantiers,
         BottomNavItem.TontesPrio,
         BottomNavItem.Carte
-        // La page d'accueil sera ajoutée ici
     )
 
     val drawerNavItems = listOf(
@@ -241,8 +243,12 @@ fun AppNavigationWithDrawer(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = drawerState.isOpen, // Désactive le geste d'ouverture par swipe, mais permet le swipe pour fermer si ouvert
         drawerContent = {
-            ModalDrawerSheet {
+            ModalDrawerSheet(
+                modifier = Modifier.fillMaxWidth(0.75f) // Occupe 75% de la largeur de l'écran, ou utilisez drawerWidth
+                // modifier = Modifier.width(drawerWidth) // Alternative avec une largeur calculée
+            ) {
                 Spacer(Modifier.height(12.dp))
                 drawerNavItems.forEach { item ->
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -276,11 +282,19 @@ fun AppNavigationWithDrawer(
                         val navBackStackEntry by navController.currentBackStackEntryAsState()
                         val currentRoute = navBackStackEntry?.destination?.route
                         val titleText = GetCurrentScreenTitle(currentRoute, chantierViewModel)
-                        Text(text = titleText) // Fournir explicitement le paramètre nommé 'text'
+                        Text(text = titleText)
                     },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Filled.Menu, contentDescription = "Ouvrir le menu de navigation")
+                        IconButton(onClick = {
+                            scope.launch {
+                                if (drawerState.isClosed) {
+                                    drawerState.open()
+                                } else {
+                                    drawerState.close()
+                                }
+                            }
+                        }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Ouvrir/Fermer le menu de navigation")
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -378,7 +392,3 @@ fun AppNavigationWithDrawer(
         }
     }
 }
-
-// L'objet ScreenDestinations est défini dans votre fichier Navigation.kt (et est importé implicitement)
-// Il n'est pas nécessaire de le redéclarer ici.
-// La fonction pour obtenir le titre est maintenant GetCurrentScreenTitle ci-dessus.
