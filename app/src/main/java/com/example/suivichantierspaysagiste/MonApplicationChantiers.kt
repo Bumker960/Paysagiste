@@ -8,7 +8,8 @@ class MonApplicationChantiers : Application() {
         ChantierRepository(
             database.chantierDao(),
             database.interventionDao(),
-            database.desherbagePlanifieDao() // NOUVEAU DAO injecté
+            database.desherbagePlanifieDao(),
+            database.prestationHorsContratDao() // Injection du nouveau DAO
         )
     }
 }

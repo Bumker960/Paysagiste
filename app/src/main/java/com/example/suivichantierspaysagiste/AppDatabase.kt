@@ -8,14 +8,15 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-// VERSION INCLEMENTÉE à 6 pour la nouvelle migration
-@Database(entities = [Chantier::class, Intervention::class, DesherbagePlanifie::class], version = 6, exportSchema = false)
+// VERSION INCLEMENTÉE à 7 pour la nouvelle migration
+@Database(entities = [Chantier::class, Intervention::class, DesherbagePlanifie::class, PrestationHorsContrat::class], version = 7, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun chantierDao(): ChantierDao
     abstract fun interventionDao(): InterventionDao
     abstract fun desherbagePlanifieDao(): DesherbagePlanifieDao
+    abstract fun prestationHorsContratDao(): PrestationHorsContratDao // Nouveau DAO
 
     companion object {
         @Volatile
@@ -59,16 +60,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // NOUVELLE migration de la version 5 à 6 pour ajouter latitude et longitude à Chantiers
+        // Migration existante de la version 5 à 6 pour ajouter latitude et longitude à Chantiers
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Ajoute la colonne latitude à la table chantiers. REAL est utilisé pour les Double en SQLite.
                 db.execSQL("ALTER TABLE `chantiers` ADD COLUMN `latitude` REAL")
-                // Ajoute la colonne longitude à la table chantiers.
                 db.execSQL("ALTER TABLE `chantiers` ADD COLUMN `longitude` REAL")
             }
         }
 
+        // NOUVELLE migration de la version 6 à 7 pour ajouter la table prestations_extras
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `prestations_extras` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `chantierId` INTEGER, 
+                        `referenceChantierTexteLibre` TEXT,
+                        `description` TEXT NOT NULL,
+                        `datePrestation` INTEGER NOT NULL,
+                        `montant` REAL NOT NULL,
+                        `statut` TEXT NOT NULL DEFAULT '${StatutFacturationExtras.A_FACTURER.name}',
+                        `notes` TEXT,
+                        FOREIGN KEY(`chantierId`) REFERENCES `chantiers`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """)
+                // Index optionnel sur chantierId si vous faites souvent des recherches par ce biais
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_prestations_extras_chantierId` ON `prestations_extras` (`chantierId`)")
+                // Index optionnel sur statut pour accélérer le filtrage par onglet
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_prestations_extras_statut` ON `prestations_extras` (`statut`)")
+            }
+        }
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -77,12 +98,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "suivi_chantiers_database"
                 )
-                    // Ajout de la nouvelle migration MIGRATION_5_6 à la liste
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
-                    // Gère les versions antérieures à la première migration définie (ici, < 2)
-                    // Si une version < 2 est détectée, la base de données sera détruite et reconstruite.
-                    // Soyez prudent avec cette option en production si des données importantes existent déjà.
-                    .fallbackToDestructiveMigrationFrom(1)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7) // Ajout de la nouvelle migration
+                    .fallbackToDestructiveMigrationFrom(1) // Conservez ou ajustez selon votre stratégie
                     .build()
                 INSTANCE = instance
                 instance

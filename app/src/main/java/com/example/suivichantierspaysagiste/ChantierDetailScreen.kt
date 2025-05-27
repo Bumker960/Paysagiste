@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 
 
 @OptIn(ExperimentalMaterial3Api::class)
-private object NoFutureDatesSelectableDates : SelectableDates {
+internal object NoFutureDatesSelectableDates : SelectableDates {
     override fun isSelectableDate(utcTimeMillis: Long): Boolean {
         return utcTimeMillis <= System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1)
     }

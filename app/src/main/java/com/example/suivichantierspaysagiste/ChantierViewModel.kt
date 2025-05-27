@@ -3,10 +3,10 @@ package com.example.suivichantierspaysagiste
 import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.location.Address // IMPORT POUR Geocoder
-import android.location.Geocoder // IMPORT POUR Geocoder
-import android.location.Location // IMPORT POUR CALCUL DE DISTANCE
-import android.os.Build // IMPORT POUR Geocoder API 33+
+import android.location.Address
+import android.location.Geocoder
+import android.location.Location
+import android.os.Build
 import android.provider.CalendarContract
 import android.util.Log
 import android.widget.Toast
@@ -23,10 +23,10 @@ import java.util.Date
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.graphics.Color
-import com.google.android.gms.maps.model.BitmapDescriptorFactory // AJOUTÉ pour les teintes des marqueurs
-import com.google.android.gms.maps.model.LatLng // IMPORT POUR LatLng
-import kotlinx.coroutines.Dispatchers // IMPORT POUR Dispatchers.IO
-import java.io.IOException // IMPORT POUR IOException
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.LatLng
+import kotlinx.coroutines.Dispatchers
+import java.io.IOException
 import java.text.DecimalFormat
 
 // --- Data classes pour l'UI (existantes et nouvelles) ---
@@ -74,13 +74,12 @@ data class NearestSiteResult(
     val latLng: LatLng?
 )
 
-// NOUVELLE Data class pour les informations des marqueurs sur la carte
 data class MapChantierData(
-    val chantier: Chantier, // Contient id, nomClient, adresse, latitude, longitude, serviceTonteActive
+    val chantier: Chantier,
     val derniereTonteDate: Date?,
     val joursDepuisDerniereTonte: Long?,
-    val tonteUrgencyColor: Color, // androidx.compose.ui.graphics.Color
-    val markerHue: Float // Teinte pour BitmapDescriptorFactory (Google Maps)
+    val tonteUrgencyColor: Color,
+    val markerHue: Float
 )
 
 
@@ -202,7 +201,7 @@ class ChantierViewModel(
 
             when (sortOrder) {
                 SortOrder.ASC -> items.sortedBy { it.joursEcoules ?: Long.MAX_VALUE }
-                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L }
+                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L } // -1L pour que null (jamais fait) soit le plus urgent
                 SortOrder.NONE -> items.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -253,7 +252,7 @@ class ChantierViewModel(
             Color.Red -> 0
             OrangeCustom -> 1
             Color.Green -> 2
-            else -> 3
+            else -> 3 // Gray or other default
         }
     }
 
@@ -274,14 +273,18 @@ class ChantierViewModel(
                     urgencyColor = getUrgencyColorForTaille(info.derniereTailleDate, info.nombreTaillesCetteAnnee, seuil1V, seuil2O)
                 )
             }
+            // Tri principal par couleur d'urgence (rouge > orange > vert), puis par jours écoulés.
+            // Pour DESC (plus urgent en premier), on trie par score de priorité ascendant (0=Rouge est le plus petit)
+            // puis par jours écoulés descendant (plus de jours = plus urgent)
+            // Pour ASC (moins urgent en premier), c'est l'inverse.
             when (sortOrder) {
-                SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MIN_VALUE })
-                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: Long.MAX_VALUE })
+                SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: -1L })
+                SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MAX_VALUE })
                 SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
-    // --- NOUVELLE Logique et StateFlows pour le DESHERBAGE ---
+    // --- Logique et StateFlows pour le DESHERBAGE ---
     val desherbagesPlanifiesDuChantier: StateFlow<List<DesherbagePlanifie>> = _selectedChantierId.flatMapLatest { id ->
         if (id == null) flowOf(emptyList())
         else repository.getDesherbagesPlanifiesForChantier(id)
@@ -303,12 +306,12 @@ class ChantierViewModel(
         else repository.countInterventionsOfTypeForChantierFlow(id, "Désherbage")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
 
-    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC)
+    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC) // ASC pour date la plus proche en premier
     val desherbagesSortOrder: StateFlow<SortOrder> = _desherbagesSortOrder.asStateFlow()
 
     val desherbagesPrioritaires: StateFlow<List<DesherbagePrioritaireUiItem>> = combine(
         repository.getAllPendingDesherbagesFlow(),
-        tousLesChantiers, // Utiliser tousLesChantiers pour avoir les détails complets
+        tousLesChantiers,
         _searchQuery,
         _desherbagesSortOrder,
         desherbageSeuilOrangeJoursAvant
@@ -317,7 +320,7 @@ class ChantierViewModel(
 
         val uiItems = pendingPlanifs.mapNotNull { planif ->
             chantierMap[planif.chantierId]?.let { chantier ->
-                if (chantier.serviceDesherbageActive) { // Vérifier si le service est actif pour ce chantier
+                if (chantier.serviceDesherbageActive) {
                     val joursAvantEcheance = planif.datePlanifiee.let { date ->
                         val today = Calendar.getInstance().apply { timeInMillis = System.currentTimeMillis(); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
                         val target = Calendar.getInstance().apply { time = date; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
@@ -331,16 +334,18 @@ class ChantierViewModel(
                         urgencyColor = getUrgencyColorForDesherbage(planif.datePlanifiee, seuilOrange),
                         joursAvantEcheance = joursAvantEcheance
                     )
-                } else null // Ne pas inclure si le service désherbage n'est pas actif pour ce chantier
+                } else null
             }
-        }.filter { // Filtrer par la recherche après avoir construit les items
+        }.filter {
             if (query.isBlank()) true
             else it.nomClient.contains(query, ignoreCase = true)
         }
 
+        // ASC: Plus urgent en premier (date la plus proche, joursAvantEcheance le plus petit)
+        // DESC: Moins urgent en premier (date la plus éloignée, joursAvantEcheance le plus grand)
         when (sortOrder) {
             SortOrder.ASC -> uiItems.sortedWith(compareBy<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursAvantEcheance ?: Long.MAX_VALUE })
-            SortOrder.DESC -> uiItems.sortedWith(compareByDescending<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursAvantEcheance ?: Long.MIN_VALUE })
+            SortOrder.DESC -> uiItems.sortedWith(compareByDescending<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursAvantEcheance ?: Long.MIN_VALUE }) // MIN_VALUE pour les nuls en DESC pour les mettre à la fin
             SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -372,22 +377,22 @@ class ChantierViewModel(
         }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
 
-    // --- NOUVEAU StateFlow pour les données de la carte ---
+    // --- Données de la carte ---
     private val _rawTontesInfoForAllActiveChantiers: Flow<Map<Long, Date?>> =
-        repository.getTontesPrioritairesFlow() // Cette fonction du DAO retourne List<TontePrioritaireInfo> (id, nom, derniereTonteDate) pour les chantiers avec serviceTonteActive = 1
+        repository.getTontesPrioritairesFlow()
             .map { list ->
                 list.associate { it.chantierId to it.derniereTonteDate }
             }
             .distinctUntilChanged()
 
     val mapData: StateFlow<List<MapChantierData>> = combine(
-        tousLesChantiers, // Flow<List<Chantier>> - non filtré par la recherche de l'UI principale
-        _rawTontesInfoForAllActiveChantiers, // Map<chantierId, derniereTonteDate?> pour ceux où serviceTonteActive=true
+        tousLesChantiers,
+        _rawTontesInfoForAllActiveChantiers,
         tonteSeuilVert,
         tonteSeuilOrange
     ) { chantiers, tontesInfoMap, seuilV, seuilO ->
         chantiers
-            .filter { it.latitude != null && it.longitude != null } // Uniquement ceux avec des coordonnées
+            .filter { it.latitude != null && it.longitude != null }
             .map { chantier ->
                 val derniereTonteDate: Date?
                 val joursDepuisDerniereTonte: Long?
@@ -395,34 +400,47 @@ class ChantierViewModel(
                 val finalMarkerHue: Float
 
                 if (chantier.serviceTonteActive) {
-                    derniereTonteDate = tontesInfoMap[chantier.id] // Peut être null si jamais tondu
+                    derniereTonteDate = tontesInfoMap[chantier.id]
                     joursDepuisDerniereTonte = derniereTonteDate?.let { date ->
                         TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time)
-                    } // Reste null si derniereTonteDate est null (jamais tondu)
+                    }
 
                     finalUrgencyColor = getUrgencyColor(joursDepuisDerniereTonte, seuilV, seuilO)
                     finalMarkerHue = when (finalUrgencyColor) {
                         Color.Red -> BitmapDescriptorFactory.HUE_RED
                         OrangeCustom -> BitmapDescriptorFactory.HUE_ORANGE
                         Color.Green -> BitmapDescriptorFactory.HUE_GREEN
-                        else -> BitmapDescriptorFactory.HUE_AZURE // Cas par défaut inattendu
+                        else -> BitmapDescriptorFactory.HUE_AZURE
                     }
-                } else {
+                } else { // Si service tonte non actif, ou autre service pour la carte plus tard
                     derniereTonteDate = null
                     joursDepuisDerniereTonte = null
-                    finalUrgencyColor = Color.Gray // Couleur pour service tonte non actif
-                    finalMarkerHue = BitmapDescriptorFactory.HUE_AZURE // Teinte pour service non actif
+                    var markerColorToUse = BitmapDescriptorFactory.HUE_AZURE // Couleur par défaut pour non-tonte
+                    if(chantier.serviceTailleActive) markerColorToUse = BitmapDescriptorFactory.HUE_ORANGE
+                    if(chantier.serviceDesherbageActive && !chantier.serviceTonteActive && !chantier.serviceTailleActive) markerColorToUse = BitmapDescriptorFactory.HUE_YELLOW
+
+                    finalUrgencyColor = Color.Gray
+                    finalMarkerHue = markerColorToUse
                 }
 
                 MapChantierData(
                     chantier = chantier,
                     derniereTonteDate = derniereTonteDate,
                     joursDepuisDerniereTonte = joursDepuisDerniereTonte,
-                    tonteUrgencyColor = finalUrgencyColor, // Ceci est la couleur Compose UI
-                    markerHue = finalMarkerHue // Ceci est la teinte pour Google Maps
+                    tonteUrgencyColor = finalUrgencyColor,
+                    markerHue = finalMarkerHue
                 )
             }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    // --- NOUVEAU: StateFlows pour la page "Facturation Extras" ---
+    val prestationsExtrasAFacturer: StateFlow<List<PrestationHorsContratDisplay>> =
+        repository.getPrestationsDisplayByStatut(StatutFacturationExtras.A_FACTURER)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val prestationsExtrasFactureesHistorique: StateFlow<List<PrestationHorsContratDisplay>> =
+        repository.getPrestationsDisplayByStatut(StatutFacturationExtras.FACTUREE)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
 
     fun demarrerInterventionChrono(chantierId: Long, typeIntervention: String, chantierNom: String) {
@@ -430,7 +448,6 @@ class ChantierViewModel(
             Toast.makeText(applicationContext, "Un chronomètre est déjà en cours.", Toast.LENGTH_SHORT).show()
             return
         }
-        Log.d("ChantierViewModel", "Demande de démarrage du service pour chantier ID: $chantierId, Type: $typeIntervention")
         val intent = Intent(applicationContext, ChronomailleurService::class.java).apply {
             action = ChronomailleurService.ACTION_START
             putExtra(ChronomailleurService.EXTRA_CHANTIER_ID, chantierId)
@@ -442,10 +459,8 @@ class ChantierViewModel(
 
     fun terminerInterventionChrono(notes: String?) {
         if (interventionEnCoursUi.value == null) {
-            Log.w("ChantierViewModel", "Aucun chronomètre en cours à terminer.")
             return
         }
-        Log.d("ChantierViewModel", "Demande d'arrêt du service.")
         val intent = Intent(applicationContext, ChronomailleurService::class.java).apply {
             action = ChronomailleurService.ACTION_STOP
             putExtra(ChronomailleurService.EXTRA_NOTES, notes)
@@ -510,6 +525,7 @@ class ChantierViewModel(
             } else if (dureeManuelleMillis != null && dureeManuelleMillis > 0) {
                 heureFinEffective = Date(dateDebut.time + dureeManuelleMillis)
             } else {
+                // Si la durée est 0 ou négative, ou si la date de fin n'est pas après le début, on les met à null
                 if (dureeManuelleMillis != null && dureeManuelleMillis <=0) dureeEffectiveMillis = null
                 if (dateFin != null && !dateDebut.before(dateFin)) heureFinEffective = null
             }
@@ -517,12 +533,12 @@ class ChantierViewModel(
             val intervention = Intervention(
                 chantierId = chantierId,
                 typeIntervention = typeIntervention,
-                dateIntervention = heureDebutEffective,
+                dateIntervention = heureDebutEffective, // Conserver pour le tri principal
                 heureDebut = heureDebutEffective,
                 heureFin = heureFinEffective,
                 dureeEffective = dureeEffectiveMillis,
                 notes = notes,
-                statutIntervention = InterventionStatus.COMPLETED.name
+                statutIntervention = InterventionStatus.COMPLETED.name // Manuelle donc complétée
             )
             repository.insertIntervention(intervention)
         }
@@ -546,15 +562,17 @@ class ChantierViewModel(
             } else if (nouvelleDureeMillis != null && nouvelleDureeMillis > 0) {
                 heureFinCalc = Date(nouvelleHeureDebut.time + nouvelleDureeMillis)
             } else {
+                // Réinitialiser si invalide
                 heureFinCalc = null
                 dureeCalc = null
             }
 
             val updatedIntervention = interventionExistante.copy(
-                dateIntervention = nouvelleHeureDebut,
+                dateIntervention = nouvelleHeureDebut, // Mettre à jour aussi pour le tri
                 heureDebut = nouvelleHeureDebut,
                 heureFin = heureFinCalc,
                 dureeEffective = dureeCalc,
+                // Le statut reste COMPLETED si on modifie une intervention déjà terminée
                 statutIntervention = if (heureFinCalc != null) InterventionStatus.COMPLETED.name else interventionExistante.statutIntervention
             )
             repository.updateIntervention(updatedIntervention)
@@ -586,7 +604,14 @@ class ChantierViewModel(
     fun marquerDesherbagePlanifieEffectue(planificationId: Long, dateEffectiveIntervention: Date, notesIntervention: String?) {
         viewModelScope.launch {
             repository.markDesherbagePlanifieAsDone(planificationId)
-            // Optionnel: créer une intervention de désherbage si ce n'est pas déjà fait ailleurs
+            // Optionnel: Ici, on pourrait automatiquement créer une intervention "Désherbage"
+            // si ce n'est pas géré par un démarrage de chrono ou enregistrement manuel.
+            // Pour l'instant, on se contente de marquer la planification.
+            // Exemple:
+            // val planif = repository.desherbagePlanifieDao.getDesherbagePlanifieById(planificationId)
+            // planif?.let {
+            //     enregistrerInterventionManuelle(it.chantierId, "Désherbage", dateEffectiveIntervention, null, notesIntervention)
+            // }
         }
     }
 
@@ -648,7 +673,7 @@ class ChantierViewModel(
         var dateDebutMillis: Long? = null
         var dateFinMillis: Long? = null
         var itemId: Long? = null
-        var itemType: String? = null
+        var itemType: String? = null // "intervention", "planification", "prestation_extra"
 
         when (item) {
             is Intervention -> {
@@ -668,7 +693,7 @@ class ChantierViewModel(
             is DesherbagePlanifie -> {
                 titre = "Désherbage Planifié - $chantierNom"
                 dateDebutMillis = item.datePlanifiee.time
-                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1) // Durée par défaut d'1h pour l'agenda
+                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1) // Durée par défaut d'1h
                 description += "\nType: Désherbage Planifié"
                 if (!item.notesPlanification.isNullOrBlank()) {
                     description += "\nNotes de planification: ${item.notesPlanification}"
@@ -679,6 +704,8 @@ class ChantierViewModel(
                 itemId = item.id
                 itemType = "planification"
             }
+            // Gérer PrestationHorsContrat si on veut l'exporter aussi
+            // is PrestationHorsContrat -> { ... }
         }
 
         if (titre != null && dateDebutMillis != null && itemId != null && itemType != null) {
@@ -686,16 +713,17 @@ class ChantierViewModel(
             intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, dateDebutMillis)
             intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, dateFinMillis)
             intent.putExtra(CalendarContract.Events.DESCRIPTION, description)
-            intent.putExtra(CalendarContract.Events.EVENT_LOCATION, selectedChantier.value?.adresse ?: "")
+            intent.putExtra(CalendarContract.Events.EVENT_LOCATION, selectedChantier.value?.adresse ?: "") // Ou une autre logique pour l'adresse si chantier non sélectionné
             intent.putExtra(CalendarContract.Events.ALL_DAY, false)
 
             try {
                 context.startActivity(intent)
+                // Marquer comme exporté dans la BDD
                 viewModelScope.launch {
-                    if (itemType == "intervention") {
-                        repository.marquerInterventionExportee(itemId, true)
-                    } else if (itemType == "planification") {
-                        repository.marquerDesherbagePlanifieExportee(itemId, true)
+                    when (itemType) {
+                        "intervention" -> repository.marquerInterventionExportee(itemId, true)
+                        "planification" -> repository.marquerDesherbagePlanifieExportee(itemId, true)
+                        // "prestation_extra" -> repository.marquerPrestationExtraExportee(itemId, true)
                     }
                 }
             } catch (e: Exception) {
@@ -709,8 +737,8 @@ class ChantierViewModel(
 
     fun findNearestMowingSite(currentUserLocation: LatLng, onResult: (NearestSiteResult) -> Unit) {
         viewModelScope.launch {
-            val allChantiersSnapshot = tousLesChantiers.first()
-            val potentialSites = tontesPrioritaires.first() // Utilise le flow tontesPrioritaires qui a déjà lat/lng et urgencyColor
+            val allChantiersSnapshot = tousLesChantiers.first() // Prend la valeur actuelle du Flow
+            val potentialSites = tontesPrioritaires.first() // Idem
                 .filter { it.latitude != null && it.longitude != null && it.chantierId != 0L }
 
             if (potentialSites.isEmpty()) {
@@ -718,11 +746,12 @@ class ChantierViewModel(
                 return@launch
             }
 
-            val userAndroidLocation = Location("").apply {
+            val userAndroidLocation = Location("user").apply {
                 latitude = currentUserLocation.latitude
                 longitude = currentUserLocation.longitude
             }
 
+            // Prioriser les sites urgents (Rouge ou Orange)
             val urgentSites = potentialSites.filter { it.urgencyColor == Color.Red || it.urgencyColor == OrangeCustom }
             val greenSites = potentialSites.filter { it.urgencyColor == Color.Green }
 
@@ -735,7 +764,7 @@ class ChantierViewModel(
 
             if (sitesToSearch.isNotEmpty()) {
                 sitesToSearch.forEach { siteInfo ->
-                    val siteLocation = Location("").apply {
+                    val siteLocation = Location("site").apply {
                         latitude = siteInfo.latitude!!
                         longitude = siteInfo.longitude!!
                     }
@@ -745,18 +774,101 @@ class ChantierViewModel(
                         nearestSiteInfo = siteInfo
                     }
                 }
+
                 targetChantier = nearestSiteInfo?.let { info -> allChantiersSnapshot.find { it.id == info.chantierId } }
                 val df = DecimalFormat("#.##")
                 val distanceKm = df.format(minDistance / 1000f)
-                val statusMessage = if (urgentSites.isNotEmpty()) "(urgent)" else "(à jour)"
+                val statusMessage = if (urgentSites.isNotEmpty() && nearestSiteInfo?.urgencyColor != Color.Green) "(urgent)" else "(à jour)"
                 message = "Chantier tonte le plus proche ${statusMessage}: ${targetChantier?.nomClient ?: nearestSiteInfo?.nomClient ?: "N/A"} à ${distanceKm} km."
 
-            } else {
-                message = "Aucun chantier de tonte éligible trouvé pour la recherche du plus proche."
+            } else { // Aucun site urgent ou vert trouvé (devrait être rare si potentialSites n'est pas vide)
+                message = "Aucun chantier de tonte éligible (urgent ou à jour) trouvé pour la recherche."
             }
 
             val finalLatLng = nearestSiteInfo?.let { LatLng(it.latitude!!, it.longitude!!) }
             onResult(NearestSiteResult(targetChantier, message, finalLatLng))
+        }
+    }
+
+
+    // --- Fonctions pour PrestationHorsContrat ---
+    fun ajouterPrestationExtra(
+        chantierId: Long?,
+        referenceChantierTexteLibre: String?,
+        description: String,
+        datePrestation: Date,
+        montant: Double,
+        notes: String?
+    ) {
+        viewModelScope.launch {
+            if (chantierId == null && referenceChantierTexteLibre.isNullOrBlank()) {
+                Toast.makeText(applicationContext, "Veuillez sélectionner un chantier ou saisir une référence.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (description.isBlank()) {
+                Toast.makeText(applicationContext, "La description est requise.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            val prestation = PrestationHorsContrat(
+                chantierId = chantierId,
+                referenceChantierTexteLibre = referenceChantierTexteLibre?.ifBlank { null },
+                description = description,
+                datePrestation = datePrestation,
+                montant = montant,
+                statut = StatutFacturationExtras.A_FACTURER.name,
+                notes = notes?.ifBlank { null }
+            )
+            repository.insertPrestationHorsContrat(prestation)
+            Toast.makeText(applicationContext, "Prestation extra ajoutée.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun updatePrestationExtra(prestation: PrestationHorsContrat) {
+        viewModelScope.launch {
+            if (prestation.chantierId == null && prestation.referenceChantierTexteLibre.isNullOrBlank()) {
+                Toast.makeText(applicationContext, "Veuillez sélectionner un chantier ou saisir une référence.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (prestation.description.isBlank()) {
+                Toast.makeText(applicationContext, "La description est requise.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            repository.updatePrestationHorsContrat(prestation)
+            Toast.makeText(applicationContext, "Prestation extra mise à jour.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    suspend fun getPrestationExtraById(id: Long): PrestationHorsContrat? {
+        return repository.getPrestationHorsContratById(id)
+    }
+
+    fun deletePrestationExtra(prestation: PrestationHorsContrat) {
+        viewModelScope.launch {
+            repository.deletePrestationHorsContrat(prestation)
+            Toast.makeText(applicationContext, "Prestation extra supprimée.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun marquerPrestationExtraFacturee(prestationId: Long) {
+        viewModelScope.launch {
+            val prestation = repository.getPrestationHorsContratById(prestationId)
+            prestation?.let {
+                val updatedPrestation = it.copy(statut = StatutFacturationExtras.FACTUREE.name)
+                repository.updatePrestationHorsContrat(updatedPrestation)
+                Toast.makeText(applicationContext, "Prestation marquée comme facturée.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun remettrePrestationExtraAFacturer(prestationId: Long) {
+        viewModelScope.launch {
+            val prestation = repository.getPrestationHorsContratById(prestationId)
+            prestation?.let {
+                val updatedPrestation = it.copy(statut = StatutFacturationExtras.A_FACTURER.name)
+                repository.updatePrestationHorsContrat(updatedPrestation)
+                Toast.makeText(applicationContext, "Prestation remise à facturer.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }

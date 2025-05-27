@@ -6,7 +6,8 @@ import java.util.Date
 class ChantierRepository(
     private val chantierDao: ChantierDao,
     private val interventionDao: InterventionDao,
-    private val desherbagePlanifieDao: DesherbagePlanifieDao
+    private val desherbagePlanifieDao: DesherbagePlanifieDao,
+    private val prestationHorsContratDao: PrestationHorsContratDao // Ajout du DAO
 ) {
 
     // --- Fonctions pour les Chantiers (inchangées) ---
@@ -30,12 +31,11 @@ class ChantierRepository(
         return chantierDao.getChantierByIdFlow(id)
     }
 
-    // --- Fonctions pour les Interventions ---
+    // --- Fonctions pour les Interventions (inchangées) ---
     fun getInterventionsForChantier(chantierId: Long): Flow<List<Intervention>> {
         return interventionDao.getInterventionsForChantier(chantierId)
     }
 
-    // Modifié pour retourner l'ID, utile pour récupérer l'intervention après insertion si besoin
     suspend fun insertIntervention(intervention: Intervention): Long {
         return interventionDao.insertIntervention(intervention)
     }
@@ -84,7 +84,7 @@ class ChantierRepository(
         return chantierDao.getTaillesPrioritairesInfoFlow(startOfYearTimestamp, endOfYearTimestamp)
     }
 
-    // --- Fonctions pour DesherbagePlanifie (inchangées pour l'instant au niveau du repo) ---
+    // --- Fonctions pour DesherbagePlanifie (inchangées) ---
     fun getDesherbagesPlanifiesForChantier(chantierId: Long): Flow<List<DesherbagePlanifie>> {
         return desherbagePlanifieDao.getDesherbagesPlanifiesForChantier(chantierId)
     }
@@ -132,8 +132,28 @@ class ChantierRepository(
         }
     }
 
-    // NOUVELLE FONCTION pour récupérer une intervention en cours
     suspend fun getInterventionEnCours(chantierId: Long, typeIntervention: String): Intervention? {
         return interventionDao.getInterventionEnCours(chantierId, typeIntervention)
+    }
+
+    // --- Nouvelles fonctions pour PrestationHorsContrat ---
+    fun getPrestationsDisplayByStatut(statut: StatutFacturationExtras): Flow<List<PrestationHorsContratDisplay>> {
+        return prestationHorsContratDao.getPrestationsDisplayByStatut(statut.name)
+    }
+
+    suspend fun insertPrestationHorsContrat(prestation: PrestationHorsContrat): Long {
+        return prestationHorsContratDao.insert(prestation)
+    }
+
+    suspend fun updatePrestationHorsContrat(prestation: PrestationHorsContrat) {
+        prestationHorsContratDao.update(prestation)
+    }
+
+    suspend fun deletePrestationHorsContrat(prestation: PrestationHorsContrat) {
+        prestationHorsContratDao.delete(prestation)
+    }
+
+    suspend fun getPrestationHorsContratById(id: Long): PrestationHorsContrat? {
+        return prestationHorsContratDao.getPrestationById(id)
     }
 }
