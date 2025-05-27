@@ -1,3 +1,5 @@
+// bumker960/paysagiste/Paysagiste-7f7065bc2423baeb34256c195e7312ae1df9b47d/app/src/main/java/com/example/suivichantierspaysagiste/ChantierViewModel.kt
+
 package com.example.suivichantierspaysagiste
 
 import android.app.Application
@@ -118,7 +120,10 @@ class ChantierViewModel(
         combine(repository.getAllChantiers(), _searchQuery) { chantiers, query ->
             if (query.isBlank()) chantiers
             else chantiers.filter { it.nomClient.contains(query, ignoreCase = true) }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+        }
+            // MODIFICATION ICI:
+            // Remplacer SharingStarted.WhileSubscribed(5000L) par SharingStarted.Lazily
+            .stateIn(viewModelScope, SharingStarted.Lazily, emptyList()) //
 
     private val _selectedChantierId = MutableStateFlow<Long?>(null)
     val selectedChantierId : StateFlow<Long?> = _selectedChantierId.asStateFlow()
@@ -161,7 +166,7 @@ class ChantierViewModel(
         combine(
             listOf(
                 repository.getTontesPrioritairesFlow(),
-                tousLesChantiers,
+                tousLesChantiers, // Dépend de tousLesChantiers qui est maintenant Lazily
                 _searchQuery,
                 _tontesSortOrder,
                 tonteSeuilVert,
@@ -311,7 +316,7 @@ class ChantierViewModel(
 
     val desherbagesPrioritaires: StateFlow<List<DesherbagePrioritaireUiItem>> = combine(
         repository.getAllPendingDesherbagesFlow(),
-        tousLesChantiers,
+        tousLesChantiers, // Dépend de tousLesChantiers
         _searchQuery,
         _desherbagesSortOrder,
         desherbageSeuilOrangeJoursAvant
@@ -386,7 +391,7 @@ class ChantierViewModel(
             .distinctUntilChanged()
 
     val mapData: StateFlow<List<MapChantierData>> = combine(
-        tousLesChantiers,
+        tousLesChantiers, // Dépend de tousLesChantiers
         _rawTontesInfoForAllActiveChantiers,
         tonteSeuilVert,
         tonteSeuilOrange
