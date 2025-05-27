@@ -12,6 +12,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
@@ -20,23 +22,32 @@ import androidx.compose.material.icons.filled.ContentCut // Taille
 import androidx.compose.material.icons.filled.Spa // Icône pour Désherbage
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.LocationOn // ICÔNE POUR LA CARTE
+import androidx.compose.material.icons.filled.Menu // ICÔNE POUR LE DRAWER
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -48,36 +59,44 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.dp // Assurez-vous que dp est importé
 
-// Définition des écrans pour la barre de navigation (inchangé)
+// Éléments pour la barre de navigation inférieure
 sealed class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
     object Chantiers : BottomNavItem(ScreenDestinations.CHANTIER_LIST_ROUTE, "Chantiers", Icons.Filled.List)
     object TontesPrio : BottomNavItem(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE, "Tontes Prio.", Icons.Filled.Grass)
-    object TaillesPrio : BottomNavItem(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE, "Tailles Prio.", Icons.Filled.ContentCut)
-    object DesherbagesPrio : BottomNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage", Icons.Filled.Spa)
     object Carte : BottomNavItem(ScreenDestinations.MAP_ROUTE, "Carte", Icons.Filled.LocationOn)
-    object Reglages : BottomNavItem(ScreenDestinations.SETTINGS_ROUTE, "Réglages", Icons.Filled.Settings)
+    // La page d'accueil sera ajoutée ici plus tard
 }
 
-// Définition de nos couleurs modernes (inchangé)
+// Éléments pour le Navigation Drawer
+sealed class DrawerNavItem(val route: String, val label: String, val icon: ImageVector) {
+    object TaillesPrio : DrawerNavItem(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE, "Tailles Prio.", Icons.Filled.ContentCut)
+    object DesherbagesPrio : DrawerNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage Prio.", Icons.Filled.Spa)
+    object Reglages : DrawerNavItem(ScreenDestinations.SETTINGS_ROUTE, "Réglages", Icons.Filled.Settings)
+}
+
+
+// Définition de nos couleurs modernes
 object ModernColors {
-    val barBackground = Color(0xFF004D40)
+    val barBackground = Color(0xFF004D40) // Utilisé pour la BottomBar et potentiellement TopAppBar/Drawer
     val selectedContent = Color.White
     val unselectedContent = Color(0xFFB2DFDB)
 }
 
-// Définition des schémas de couleurs (inchangés)
+// Définition des schémas de couleurs
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF558B2F),
     secondary = Color(0xFF8BC34A),
     tertiary = Color(0xFFAED581),
     background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
+    surface = Color(0xFF1E1E1E), // Utilisé par défaut par le DrawerSheet
     onPrimary = Color.White,
     onSecondary = Color.Black,
     onTertiary = Color.Black,
     onBackground = Color.White,
-    onSurface = Color.White,
+    onSurface = Color.White, // Texte dans le DrawerSheet
     primaryContainer = ModernColors.barBackground,
     onPrimaryContainer = ModernColors.selectedContent
 )
@@ -87,12 +106,12 @@ private val LightColorScheme = lightColorScheme(
     secondary = Color(0xFF689F38),
     tertiary = Color(0xFF9CCC65),
     background = Color(0xFFFFFFFF),
-    surface = Color(0xFFF5F5F5),
+    surface = Color(0xFFF5F5F5), // Utilisé par défaut par le DrawerSheet
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color.Black,
     onBackground = Color.Black,
-    onSurface = Color.Black,
+    onSurface = Color.Black, // Texte dans le DrawerSheet
     primaryContainer = ModernColors.barBackground,
     onPrimaryContainer = ModernColors.selectedContent
 )
@@ -151,8 +170,8 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(
                 colorScheme = colors
             ) {
-                AppNavigation(
-                    chantierViewModel = chantierViewModel, // Passé ici
+                AppNavigationWithDrawer(
+                    chantierViewModel = chantierViewModel,
                     settingsViewModel = settingsViewModel
                 )
             }
@@ -176,112 +195,190 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+fun GetCurrentScreenTitle(route: String?, chantierViewModel: ChantierViewModel): String {
+    // Lit l'état du chantier sélectionné ici si nécessaire pour le titre
+    val selectedChantier by chantierViewModel.selectedChantier.collectAsStateWithLifecycle()
+
+    return when {
+        route == ScreenDestinations.CHANTIER_LIST_ROUTE -> "Mes Chantiers"
+        route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true -> {
+            selectedChantier?.nomClient ?: "Détail Chantier"
+        }
+        route == ScreenDestinations.TONTES_PRIORITAIRES_ROUTE -> "Tontes Prioritaires"
+        route == ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE -> "Tailles Prioritaires"
+        route == ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE -> "Désherbages Prioritaires"
+        route == ScreenDestinations.SETTINGS_ROUTE -> "Réglages"
+        route == ScreenDestinations.MAP_ROUTE -> "Carte des Chantiers"
+        // route == ScreenDestinations.ACCUEIL_ROUTE -> "Accueil" // Pour la future page d'accueil
+        else -> "SP" // Nom par défaut de l'app
+    }
+}
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppNavigation(
-    chantierViewModel: ChantierViewModel, // Reçu ici
+fun AppNavigationWithDrawer(
+    chantierViewModel: ChantierViewModel,
     settingsViewModel: SettingsViewModel
 ) {
     val navController: NavHostController = rememberNavController()
-    // val context = LocalContext.current // Non utilisé directement ici
-
-    // LaunchedEffect(Unit) { } // Peut être supprimé si vide
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
     val bottomNavItems = listOf(
         BottomNavItem.Chantiers,
         BottomNavItem.TontesPrio,
-        BottomNavItem.TaillesPrio,
-        BottomNavItem.DesherbagesPrio,
-        BottomNavItem.Carte,
-        BottomNavItem.Reglages
+        BottomNavItem.Carte
+        // La page d'accueil sera ajoutée ici
     )
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar(
-                containerColor = ModernColors.barBackground
-            ) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
+    val drawerNavItems = listOf(
+        DrawerNavItem.TaillesPrio,
+        DrawerNavItem.DesherbagesPrio,
+        DrawerNavItem.Reglages
+    )
 
-                bottomNavItems.forEach { screen ->
-                    val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route || (it.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true && screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE) } == true
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Spacer(Modifier.height(12.dp))
+                drawerNavItems.forEach { item ->
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentDestination = navBackStackEntry?.destination
+                    val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
 
-                    NavigationBarItem(
-                        icon = { Icon(screen.icon, contentDescription = screen.label) },
-                        label = { Text(screen.label) },
-                        selected = isSelected,
+                    NavigationDrawerItem(
+                        icon = { Icon(item.icon, contentDescription = item.label) },
+                        label = { Text(item.label) },
+                        selected = selected,
                         onClick = {
-                            val targetRoute = screen.route
-                            if (currentDestination?.route != targetRoute) {
-                                navController.navigate(targetRoute) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
-                                        inclusive = targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
+                            scope.launch { drawerState.close() }
+                            navController.navigate(item.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
                                 }
-                            } else if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
-                                navController.popBackStack(ScreenDestinations.CHANTIER_LIST_ROUTE, inclusive = false)
-                            }
-                            if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE) {
-                                chantierViewModel.clearSelectedChantierId()
+                                launchSingleTop = true
+                                restoreState = true
                             }
                         },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ModernColors.selectedContent,
-                            selectedTextColor = ModernColors.selectedContent,
-                            unselectedIconColor = ModernColors.unselectedContent,
-                            unselectedTextColor = ModernColors.unselectedContent,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                        )
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                     )
                 }
             }
         }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = ScreenDestinations.CHANTIER_LIST_ROUTE,
-            modifier = Modifier.padding(innerPadding)
-        ) {
-            composable(route = ScreenDestinations.CHANTIER_LIST_ROUTE) {
-                ChantierListScreen(viewModel = chantierViewModel, navController = navController)
-            }
-            composable(
-                ScreenDestinations.CHANTIER_DETAIL_ROUTE_TEMPLATE,
-                arguments = listOf(navArgument(ScreenDestinations.CHANTIER_ID_ARG) { type = NavType.LongType })
-            ) { backStackEntry ->
-                val chantierId = backStackEntry.arguments?.getLong(ScreenDestinations.CHANTIER_ID_ARG)
-                if (chantierId != null) {
-                    ChantierDetailScreen(
-                        chantierId = chantierId,
-                        viewModel = chantierViewModel,
-                        navController = navController
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        val navBackStackEntry by navController.currentBackStackEntryAsState()
+                        val currentRoute = navBackStackEntry?.destination?.route
+                        val titleText = GetCurrentScreenTitle(currentRoute, chantierViewModel)
+                        Text(text = titleText) // Fournir explicitement le paramètre nommé 'text'
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Ouvrir le menu de navigation")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
-                } else {
-                    Text("Erreur: Chantier ID manquant")
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = ModernColors.barBackground
+                ) {
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentDestination = navBackStackEntry?.destination
+
+                    bottomNavItems.forEach { screen ->
+                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route || (it.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true && screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE) } == true
+                        NavigationBarItem(
+                            icon = { Icon(screen.icon, contentDescription = screen.label) },
+                            label = { Text(screen.label) },
+                            selected = isSelected,
+                            onClick = {
+                                val targetRoute = screen.route
+                                if (currentDestination?.route != targetRoute) {
+                                    navController.navigate(targetRoute) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
+                                            inclusive = targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = targetRoute != ScreenDestinations.CHANTIER_LIST_ROUTE
+                                    }
+                                } else if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
+                                    navController.popBackStack(ScreenDestinations.CHANTIER_LIST_ROUTE, inclusive = false)
+                                }
+                                if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE) {
+                                    chantierViewModel.clearSelectedChantierId()
+                                }
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = ModernColors.selectedContent,
+                                selectedTextColor = ModernColors.selectedContent,
+                                unselectedIconColor = ModernColors.unselectedContent,
+                                unselectedTextColor = ModernColors.unselectedContent,
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            )
+                        )
+                    }
                 }
             }
-            composable(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE) {
-                TontesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
-            }
-            composable(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE) {
-                TaillesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
-            }
-            composable(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE) {
-                DesherbagesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
-            }
-            composable(route = ScreenDestinations.SETTINGS_ROUTE) {
-                SettingsScreen(
-                    settingsViewModel = settingsViewModel,
-                    navController = navController
-                )
-            }
-            composable(route = ScreenDestinations.MAP_ROUTE) {
-                MapScreen(chantierViewModel = chantierViewModel, navController = navController) // MODIFIÉ ICI pour passer le ViewModel et navController
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = ScreenDestinations.CHANTIER_LIST_ROUTE,
+                modifier = Modifier.padding(innerPadding)
+            ) {
+                composable(route = ScreenDestinations.CHANTIER_LIST_ROUTE) {
+                    ChantierListScreen(viewModel = chantierViewModel, navController = navController)
+                }
+                composable(
+                    ScreenDestinations.CHANTIER_DETAIL_ROUTE_TEMPLATE,
+                    arguments = listOf(navArgument(ScreenDestinations.CHANTIER_ID_ARG) { type = NavType.LongType })
+                ) { backStackEntry ->
+                    val chantierId = backStackEntry.arguments?.getLong(ScreenDestinations.CHANTIER_ID_ARG)
+                    if (chantierId != null) {
+                        ChantierDetailScreen(
+                            chantierId = chantierId,
+                            viewModel = chantierViewModel,
+                            navController = navController
+                        )
+                    } else {
+                        Text("Erreur: Chantier ID manquant")
+                    }
+                }
+                composable(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE) {
+                    TontesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
+                }
+                composable(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE) {
+                    TaillesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
+                }
+                composable(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE) {
+                    DesherbagesPrioritairesScreen(viewModel = chantierViewModel, navController = navController)
+                }
+                composable(route = ScreenDestinations.SETTINGS_ROUTE) {
+                    SettingsScreen(
+                        settingsViewModel = settingsViewModel,
+                        navController = navController
+                    )
+                }
+                composable(route = ScreenDestinations.MAP_ROUTE) {
+                    MapScreen(chantierViewModel = chantierViewModel, navController = navController)
+                }
             }
         }
     }
 }
+
+// L'objet ScreenDestinations est défini dans votre fichier Navigation.kt (et est importé implicitement)
+// Il n'est pas nécessaire de le redéclarer ici.
+// La fonction pour obtenir le titre est maintenant GetCurrentScreenTitle ci-dessus.

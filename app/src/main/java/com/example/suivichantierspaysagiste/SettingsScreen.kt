@@ -18,7 +18,7 @@ import androidx.navigation.NavHostController
 @Composable
 fun SettingsScreen(
     settingsViewModel: SettingsViewModel,
-    navController: NavHostController
+    navController: NavHostController // Peut être utilisé si des navigations sont nécessaires depuis cet écran
 ) {
     val isDarkMode by settingsViewModel.isDarkModeEnabled.collectAsStateWithLifecycle()
 
@@ -26,83 +26,71 @@ fun SettingsScreen(
     val tonteSeuilOrange by settingsViewModel.tonteSeuilOrange.collectAsStateWithLifecycle()
     val tailleSeuil1Vert by settingsViewModel.tailleSeuil1Vert.collectAsStateWithLifecycle()
     val tailleSeuil2Orange by settingsViewModel.tailleSeuil2Orange.collectAsStateWithLifecycle()
-    // NOUVEAU: Collecter l'état pour le seuil de désherbage
     val desherbageSeuilOrangeJoursAvant by settingsViewModel.desherbageSeuilOrangeJoursAvant.collectAsStateWithLifecycle()
 
 
     var showTontesDialog by remember { mutableStateOf(false) }
     var showTaillesDialog by remember { mutableStateOf(false) }
-    // NOUVEAU: État pour le dialogue de désherbage
     var showDesherbageDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Réglages") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            )
-        }
-    ) { innerPadding ->
-        Column(
+    // Le Scaffold et la TopAppBar sont gérés dans MainActivity.
+    Column(
+        modifier = Modifier
+            // .padding(innerPadding) // innerPadding vient du Scaffold principal
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()) // Ajout du scroll si le contenu dépasse
+    ) {
+        // Section Mode Sombre
+        Row(
             modifier = Modifier
-                .padding(innerPadding)
-                .padding(16.dp)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Section Mode Sombre
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Mode Sombre",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Switch(
-                    checked = isDarkMode,
-                    onCheckedChange = { enabled ->
-                        settingsViewModel.setDarkMode(enabled)
-                    }
-                )
-            }
-            Divider()
-
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Seuils d'Urgence", style = MaterialTheme.typography.titleLarge)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Ligne pour les seuils de Tontes
-            SettingSummaryRow(
-                title = "Seuils pour Tontes",
-                summary = "OK < ${tonteSeuilVert}j, Attention < ${tonteSeuilOrange}j",
-                onClick = { showTontesDialog = true }
+            Text(
+                text = "Mode Sombre",
+                style = MaterialTheme.typography.titleMedium
             )
-            Divider()
-
-            // Ligne pour les seuils de Tailles
-            SettingSummaryRow(
-                title = "Seuils pour Tailles (si 1/2 faite)",
-                summary = "OK < ${tailleSeuil1Vert}j, Attention < ${tailleSeuil2Orange}j",
-                onClick = { showTaillesDialog = true }
+            Switch(
+                checked = isDarkMode,
+                onCheckedChange = { enabled ->
+                    settingsViewModel.setDarkMode(enabled)
+                }
             )
-            Divider()
-
-            // NOUVEAU: Ligne pour les seuils de Désherbage
-            SettingSummaryRow(
-                title = "Seuil pour Désherbage Planifié",
-                summary = "Attention < ${desherbageSeuilOrangeJoursAvant} jours avant échéance",
-                onClick = { showDesherbageDialog = true }
-            )
-            Divider()
         }
+        Divider()
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Seuils d'Urgence", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Ligne pour les seuils de Tontes
+        SettingSummaryRow(
+            title = "Seuils pour Tontes",
+            summary = "OK < ${tonteSeuilVert}j, Attention < ${tonteSeuilOrange}j",
+            onClick = { showTontesDialog = true }
+        )
+        Divider()
+
+        // Ligne pour les seuils de Tailles
+        SettingSummaryRow(
+            title = "Seuils pour Tailles (si 1/2 faite)",
+            summary = "OK < ${tailleSeuil1Vert}j, Attention < ${tailleSeuil2Orange}j",
+            onClick = { showTaillesDialog = true }
+        )
+        Divider()
+
+        // NOUVEAU: Ligne pour les seuils de Désherbage
+        SettingSummaryRow(
+            title = "Seuil pour Désherbage Planifié",
+            summary = "Attention < ${desherbageSeuilOrangeJoursAvant} jours avant échéance",
+            onClick = { showDesherbageDialog = true }
+        )
+        Divider()
     }
+
 
     // Dialogue pour les seuils de Tontes
     if (showTontesDialog) {

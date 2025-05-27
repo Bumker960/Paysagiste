@@ -28,69 +28,58 @@ fun DesherbagesPrioritairesScreen(
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Désherbages Prioritaires") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = ModernColors.barBackground, // Utiliser les couleurs modernes définies
-                    titleContentColor = ModernColors.selectedContent,
-                    navigationIconContentColor = ModernColors.selectedContent // Si vous ajoutez une icône de navigation
-                )
-            )
-        }
-    ) { innerPadding ->
-        Column(
+    // Le Scaffold et la TopAppBar sont gérés dans MainActivity.
+    Column(
+        modifier = Modifier
+            // .padding(innerPadding) // innerPadding vient du Scaffold principal
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Row(
             modifier = Modifier
-                .padding(innerPadding)
-                .padding(16.dp)
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Button(
-                    onClick = { viewModel.changerOrdreTriDesherbages(SortOrder.ASC) }, // ASC pour plus urgent en premier (date la plus proche)
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ModernButtonBackgroundColor, // Défini dans TaillesPrioritairesScreen ou un fichier commun
-                        contentColor = ModernButtonTextColor
-                    )
-                ) {
-                    Text("Plus Urgent")
-                }
-                Button(
-                    onClick = { viewModel.changerOrdreTriDesherbages(SortOrder.DESC) }, // DESC pour moins urgent en premier
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ModernButtonBackgroundColor,
-                        contentColor = ModernButtonTextColor
-                    )
-                ) {
-                    Text("Moins Urgent")
-                }
-            }
-
-            Divider()
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (listeDesherbagesPrioritaires.isEmpty()) {
-                Text(
-                    text = "Aucun désherbage prioritaire à afficher ou toutes les planifications sont à jour.",
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+            Button(
+                onClick = { viewModel.changerOrdreTriDesherbages(SortOrder.ASC) }, // ASC pour plus urgent en premier (date la plus proche)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ModernButtonBackgroundColor, // Défini dans TaillesPrioritairesScreen ou un fichier commun
+                    contentColor = ModernButtonTextColor
                 )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(listeDesherbagesPrioritaires, key = { it.chantierId.toString() + "-" + (it.planificationId ?: "null") }) { item ->
-                        DesherbagePrioritaireListItem(
-                            item = item,
-                            dateFormat = dateFormat,
-                            onClick = {
-                                navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${item.chantierId}")
-                            }
-                        )
-                        Divider()
-                    }
+            ) {
+                Text("Plus Urgent")
+            }
+            Button(
+                onClick = { viewModel.changerOrdreTriDesherbages(SortOrder.DESC) }, // DESC pour moins urgent en premier
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ModernButtonBackgroundColor,
+                    contentColor = ModernButtonTextColor
+                )
+            ) {
+                Text("Moins Urgent")
+            }
+        }
+
+        Divider()
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (listeDesherbagesPrioritaires.isEmpty()) {
+            Text(
+                text = "Aucun désherbage prioritaire à afficher ou toutes les planifications sont à jour.",
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(listeDesherbagesPrioritaires, key = { it.chantierId.toString() + "-" + (it.planificationId ?: "null") }) { item ->
+                    DesherbagePrioritaireListItem(
+                        item = item,
+                        dateFormat = dateFormat,
+                        onClick = {
+                            navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${item.chantierId}")
+                        }
+                    )
+                    Divider()
                 }
             }
         }

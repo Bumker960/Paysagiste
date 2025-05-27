@@ -21,6 +21,7 @@ import java.util.Locale
 
 // Assurez-vous que ModernColors (pour la TopAppBar) et ModernButtonBackgroundColor/TextColor
 // sont accessibles depuis ce fichier (par exemple, définis dans UrgencyUtils.kt ou importés).
+// ModernColors n'est plus nécessaire ici car la TopAppBar est globale.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,69 +34,59 @@ fun TontesPrioritairesScreen(
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Tontes Prioritaires") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = ModernColors.barBackground,
-                    titleContentColor = ModernColors.selectedContent,
-                    navigationIconContentColor = ModernColors.selectedContent
-                )
-            )
-        }
-    ) { innerPadding ->
-        Column(
+    // Le Scaffold et la TopAppBar sont gérés dans MainActivity.
+    // On définit directement le contenu de l'écran.
+    Column(
+        modifier = Modifier
+            // .padding(innerPadding) // innerPadding vient du Scaffold principal
+            .fillMaxSize() // La Column prend toute la place disponible
+            .padding(16.dp)
+    ) {
+        Row(
             modifier = Modifier
-                .padding(innerPadding)
-                .padding(16.dp)
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Button(
-                    onClick = { viewModel.changerOrdreTriTontes(SortOrder.DESC) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ModernButtonBackgroundColor,
-                        contentColor = ModernButtonTextColor
-                    )
-                ) {
-                    Text("Plus Urgent")
-                }
-                Button(
-                    onClick = { viewModel.changerOrdreTriTontes(SortOrder.ASC) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ModernButtonBackgroundColor,
-                        contentColor = ModernButtonTextColor
-                    )
-                ) {
-                    Text("Moins Urgent")
-                }
-            }
-
-            Divider()
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (listeTontesPrioritaires.isEmpty()) {
-                Text(
-                    text = "Aucune tonte à afficher ou tous les chantiers sont à jour.",
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+            Button(
+                onClick = { viewModel.changerOrdreTriTontes(SortOrder.DESC) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ModernButtonBackgroundColor, // Assurez-vous que ces couleurs sont définies globalement ou via le thème
+                    contentColor = ModernButtonTextColor
                 )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(listeTontesPrioritaires) { item -> // item est de type TontePrioritaireItem
-                        TontePrioritaireListItem(
-                            item = item,
-                            dateFormat = dateFormat,
-                            onClick = {
-                                navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${item.chantierId}")
-                            }
-                        )
-                        Divider()
-                    }
+            ) {
+                Text("Plus Urgent")
+            }
+            Button(
+                onClick = { viewModel.changerOrdreTriTontes(SortOrder.ASC) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ModernButtonBackgroundColor,
+                    contentColor = ModernButtonTextColor
+                )
+            ) {
+                Text("Moins Urgent")
+            }
+        }
+
+        Divider()
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (listeTontesPrioritaires.isEmpty()) {
+            Text(
+                text = "Aucune tonte à afficher ou tous les chantiers sont à jour.",
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(listeTontesPrioritaires) { item -> // item est de type TontePrioritaireItem
+                    TontePrioritaireListItem(
+                        item = item,
+                        dateFormat = dateFormat,
+                        onClick = {
+                            navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${item.chantierId}")
+                        }
+                    )
+                    Divider()
                 }
             }
         }

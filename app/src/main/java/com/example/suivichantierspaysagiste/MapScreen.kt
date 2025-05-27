@@ -24,10 +24,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Scaffold // Importation de Scaffold, même si on ne l'utilise que pour le FAB
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+// import androidx.compose.material3.TopAppBar // Supprimé car géré globalement
+// import androidx.compose.material3.TopAppBarDefaults // Supprimé
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -170,23 +170,13 @@ fun MapScreen(
                     )
                 }
                 // Mettre en évidence le marqueur ou ouvrir l'info-bulle si possible
-                // Pour l'instant, on se contente de centrer la carte et d'afficher le Toast.
-                // On pourrait essayer de trouver le MarkerState correspondant si on les stockait.
             }
         }
     }
 
-
+    // Le Scaffold ici est uniquement pour gérer les FABs spécifiques à cet écran.
+    // La TopAppBar est gérée globalement.
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Carte des Chantiers") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End) {
                 if (hasLocationPermission) {
@@ -207,26 +197,26 @@ fun MapScreen(
                         },
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier.padding(bottom = 8.dp) // Espace entre les FABs si plusieurs
                     ) {
                         Icon(Icons.Filled.MyLocation, contentDescription = "Centrer sur ma position")
                     }
                 }
 
-                // FAB pour "Chantier de tonte le plus proche"
                 FloatingActionButton(
                     onClick = { findAndShowNearestMowingSite() },
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer, // Couleur distincte
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    // pas de padding bottom ici si c'est le dernier FAB
                 ) {
                     Icon(Icons.Filled.Grass, contentDescription = "Chantier de tonte le plus proche")
                 }
             }
         }
-    ) { innerPadding ->
+    ) { innerPadding -> // Ce innerPadding vient du Scaffold local, qui est à l'intérieur du Scaffold global
         Box(
             modifier = Modifier
-                .padding(innerPadding)
+                .padding(innerPadding) // Appliquer le padding du Scaffold local (pour les FABs)
                 .fillMaxSize(),
         ) {
             GoogleMap(
@@ -245,14 +235,9 @@ fun MapScreen(
                     val markerState = rememberMarkerState(position = LatLng(chantier.latitude!!, chantier.longitude!!))
                     var iconColor = BitmapDescriptorFactory.HUE_GREEN // Couleur par défaut
 
-                    // Déterminer la couleur du marqueur en fonction de l'urgence de la tonte
-                    // Cette logique doit être synchrone ou pré-calculée.
-                    // Pour une solution simple, on pourrait récupérer l'état d'urgence ici,
-                    // mais cela peut être moins performant. Idéalement, `chantier` contiendrait déjà cette info.
-                    // Pour l'instant, laissons la couleur par défaut ou une couleur basée sur le service actif.
                     if (chantier.serviceTonteActive) iconColor = BitmapDescriptorFactory.HUE_GREEN
-                    if (chantier.serviceTailleActive && !chantier.serviceTonteActive) iconColor = BitmapDescriptorFactory.HUE_ORANGE // Exemple
-                    if (chantier.serviceDesherbageActive && !chantier.serviceTonteActive && !chantier.serviceTailleActive) iconColor = BitmapDescriptorFactory.HUE_YELLOW // Exemple
+                    if (chantier.serviceTailleActive && !chantier.serviceTonteActive) iconColor = BitmapDescriptorFactory.HUE_ORANGE
+                    if (chantier.serviceDesherbageActive && !chantier.serviceTonteActive && !chantier.serviceTailleActive) iconColor = BitmapDescriptorFactory.HUE_YELLOW
 
 
                     Marker(
@@ -262,7 +247,7 @@ fun MapScreen(
                         icon = BitmapDescriptorFactory.defaultMarker(iconColor),
                         onClick = {
                             selectedMarkerState = markerState
-                            false
+                            false // Retourner false pour permettre le comportement par défaut (centrer et afficher l'info window)
                         },
                         onInfoWindowClick = {
                             navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${chantier.id}")
@@ -283,13 +268,11 @@ suspend fun getLastKnownLocation(context: Context, fusedLocationClient: FusedLoc
     }
 
     return try {
-        // Essayer d'abord getCurrentLocation pour une position plus fraîche
         val locationResult = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
         locationResult?.let { location ->
             Log.d("MapScreen", "Position actuelle obtenue: Lat ${location.latitude}, Lng ${location.longitude}")
             LatLng(location.latitude, location.longitude)
         } ?: run {
-            // Si getCurrentLocation échoue, utiliser lastLocation comme fallback
             val lastLocation = fusedLocationClient.lastLocation.await()
             lastLocation?.let {
                 Log.d("MapScreen", "Dernière position connue obtenue: Lat ${it.latitude}, Lng ${it.longitude}")

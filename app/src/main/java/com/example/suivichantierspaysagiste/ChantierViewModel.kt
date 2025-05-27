@@ -23,6 +23,7 @@ import java.util.Date
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.graphics.Color
+import com.google.android.gms.maps.model.BitmapDescriptorFactory // AJOUTÉ pour les teintes des marqueurs
 import com.google.android.gms.maps.model.LatLng // IMPORT POUR LatLng
 import kotlinx.coroutines.Dispatchers // IMPORT POUR Dispatchers.IO
 import java.io.IOException // IMPORT POUR IOException
@@ -35,8 +36,8 @@ data class TontePrioritaireItem(
     val derniereTonteDate: Date?,
     val joursEcoules: Long?,
     val urgencyColor: Color,
-    val latitude: Double?, // Ajout pour la nouvelle fonctionnalité
-    val longitude: Double? // Ajout pour la nouvelle fonctionnalité
+    val latitude: Double?,
+    val longitude: Double?
 )
 
 data class TaillePrioritaireUiItem(
@@ -67,11 +68,19 @@ data class InterventionEnCoursUi(
     val typeInterventionLisible: String
 )
 
-// Data class pour le résultat de la recherche du chantier le plus proche
 data class NearestSiteResult(
     val chantier: Chantier?,
     val message: String,
     val latLng: LatLng?
+)
+
+// NOUVELLE Data class pour les informations des marqueurs sur la carte
+data class MapChantierData(
+    val chantier: Chantier, // Contient id, nomClient, adresse, latitude, longitude, serviceTonteActive
+    val derniereTonteDate: Date?,
+    val joursDepuisDerniereTonte: Long?,
+    val tonteUrgencyColor: Color, // androidx.compose.ui.graphics.Color
+    val markerHue: Float // Teinte pour BitmapDescriptorFactory (Google Maps)
 )
 
 
@@ -152,12 +161,12 @@ class ChantierViewModel(
     val tontesPrioritaires: StateFlow<List<TontePrioritaireItem>> =
         combine(
             listOf(
-                repository.getTontesPrioritairesFlow(), // Flow<List<TontePrioritaireInfo>>
-                tousLesChantiers,                      // Flow<List<Chantier>>
-                _searchQuery,                          // Flow<String>
-                _tontesSortOrder,                      // Flow<SortOrder>
-                tonteSeuilVert,                        // Flow<Int>
-                tonteSeuilOrange                       // Flow<Int>
+                repository.getTontesPrioritairesFlow(),
+                tousLesChantiers,
+                _searchQuery,
+                _tontesSortOrder,
+                tonteSeuilVert,
+                tonteSeuilOrange
             )
         ) { values: Array<Any?> ->
             val tontesInfoList = values[0] as List<TontePrioritaireInfo>
@@ -299,16 +308,16 @@ class ChantierViewModel(
 
     val desherbagesPrioritaires: StateFlow<List<DesherbagePrioritaireUiItem>> = combine(
         repository.getAllPendingDesherbagesFlow(),
-        tousLesChantiers,
+        tousLesChantiers, // Utiliser tousLesChantiers pour avoir les détails complets
         _searchQuery,
         _desherbagesSortOrder,
         desherbageSeuilOrangeJoursAvant
-    ) { pendingPlanifs, chantiers, query, sortOrder, seuilOrange ->
-        val chantierMap = chantiers.associateBy { it.id }
+    ) { pendingPlanifs, chantiersList, query, sortOrder, seuilOrange ->
+        val chantierMap = chantiersList.associateBy { it.id }
 
         val uiItems = pendingPlanifs.mapNotNull { planif ->
             chantierMap[planif.chantierId]?.let { chantier ->
-                if (chantier.serviceDesherbageActive) {
+                if (chantier.serviceDesherbageActive) { // Vérifier si le service est actif pour ce chantier
                     val joursAvantEcheance = planif.datePlanifiee.let { date ->
                         val today = Calendar.getInstance().apply { timeInMillis = System.currentTimeMillis(); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
                         val target = Calendar.getInstance().apply { time = date; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
@@ -322,9 +331,9 @@ class ChantierViewModel(
                         urgencyColor = getUrgencyColorForDesherbage(planif.datePlanifiee, seuilOrange),
                         joursAvantEcheance = joursAvantEcheance
                     )
-                } else null
+                } else null // Ne pas inclure si le service désherbage n'est pas actif pour ce chantier
             }
-        }.filter {
+        }.filter { // Filtrer par la recherche après avoir construit les items
             if (query.isBlank()) true
             else it.nomClient.contains(query, ignoreCase = true)
         }
@@ -335,6 +344,7 @@ class ChantierViewModel(
             SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
 
     // --- CHRONOMÈTRE ---
     val interventionEnCoursUi: StateFlow<InterventionEnCoursUi?> =
@@ -360,6 +370,59 @@ class ChantierViewModel(
                 ChronomailleurService.ChronoServiceState.Idle -> null
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+
+    // --- NOUVEAU StateFlow pour les données de la carte ---
+    private val _rawTontesInfoForAllActiveChantiers: Flow<Map<Long, Date?>> =
+        repository.getTontesPrioritairesFlow() // Cette fonction du DAO retourne List<TontePrioritaireInfo> (id, nom, derniereTonteDate) pour les chantiers avec serviceTonteActive = 1
+            .map { list ->
+                list.associate { it.chantierId to it.derniereTonteDate }
+            }
+            .distinctUntilChanged()
+
+    val mapData: StateFlow<List<MapChantierData>> = combine(
+        tousLesChantiers, // Flow<List<Chantier>> - non filtré par la recherche de l'UI principale
+        _rawTontesInfoForAllActiveChantiers, // Map<chantierId, derniereTonteDate?> pour ceux où serviceTonteActive=true
+        tonteSeuilVert,
+        tonteSeuilOrange
+    ) { chantiers, tontesInfoMap, seuilV, seuilO ->
+        chantiers
+            .filter { it.latitude != null && it.longitude != null } // Uniquement ceux avec des coordonnées
+            .map { chantier ->
+                val derniereTonteDate: Date?
+                val joursDepuisDerniereTonte: Long?
+                val finalUrgencyColor: Color
+                val finalMarkerHue: Float
+
+                if (chantier.serviceTonteActive) {
+                    derniereTonteDate = tontesInfoMap[chantier.id] // Peut être null si jamais tondu
+                    joursDepuisDerniereTonte = derniereTonteDate?.let { date ->
+                        TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time)
+                    } // Reste null si derniereTonteDate est null (jamais tondu)
+
+                    finalUrgencyColor = getUrgencyColor(joursDepuisDerniereTonte, seuilV, seuilO)
+                    finalMarkerHue = when (finalUrgencyColor) {
+                        Color.Red -> BitmapDescriptorFactory.HUE_RED
+                        OrangeCustom -> BitmapDescriptorFactory.HUE_ORANGE
+                        Color.Green -> BitmapDescriptorFactory.HUE_GREEN
+                        else -> BitmapDescriptorFactory.HUE_AZURE // Cas par défaut inattendu
+                    }
+                } else {
+                    derniereTonteDate = null
+                    joursDepuisDerniereTonte = null
+                    finalUrgencyColor = Color.Gray // Couleur pour service tonte non actif
+                    finalMarkerHue = BitmapDescriptorFactory.HUE_AZURE // Teinte pour service non actif
+                }
+
+                MapChantierData(
+                    chantier = chantier,
+                    derniereTonteDate = derniereTonteDate,
+                    joursDepuisDerniereTonte = joursDepuisDerniereTonte,
+                    tonteUrgencyColor = finalUrgencyColor, // Ceci est la couleur Compose UI
+                    markerHue = finalMarkerHue // Ceci est la teinte pour Google Maps
+                )
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
 
     fun demarrerInterventionChrono(chantierId: Long, typeIntervention: String, chantierNom: String) {
@@ -646,8 +709,8 @@ class ChantierViewModel(
 
     fun findNearestMowingSite(currentUserLocation: LatLng, onResult: (NearestSiteResult) -> Unit) {
         viewModelScope.launch {
-            val allChantiersSnapshot = tousLesChantiers.first() // Prendre un snapshot actuel
-            val potentialSites = tontesPrioritaires.first()
+            val allChantiersSnapshot = tousLesChantiers.first()
+            val potentialSites = tontesPrioritaires.first() // Utilise le flow tontesPrioritaires qui a déjà lat/lng et urgencyColor
                 .filter { it.latitude != null && it.longitude != null && it.chantierId != 0L }
 
             if (potentialSites.isEmpty()) {
@@ -668,8 +731,10 @@ class ChantierViewModel(
             var message: String
             var targetChantier: Chantier? = null
 
-            if (urgentSites.isNotEmpty()) {
-                urgentSites.forEach { siteInfo ->
+            val sitesToSearch = if (urgentSites.isNotEmpty()) urgentSites else greenSites
+
+            if (sitesToSearch.isNotEmpty()) {
+                sitesToSearch.forEach { siteInfo ->
                     val siteLocation = Location("").apply {
                         latitude = siteInfo.latitude!!
                         longitude = siteInfo.longitude!!
@@ -682,22 +747,10 @@ class ChantierViewModel(
                 }
                 targetChantier = nearestSiteInfo?.let { info -> allChantiersSnapshot.find { it.id == info.chantierId } }
                 val df = DecimalFormat("#.##")
-                message = "Chantier de tonte le plus proche (urgent): ${targetChantier?.nomClient ?: nearestSiteInfo?.nomClient ?: "N/A"} à ${df.format(minDistance / 1000f)} km."
-            } else if (greenSites.isNotEmpty()) {
-                greenSites.forEach { siteInfo ->
-                    val siteLocation = Location("").apply {
-                        latitude = siteInfo.latitude!!
-                        longitude = siteInfo.longitude!!
-                    }
-                    val distance = userAndroidLocation.distanceTo(siteLocation)
-                    if (distance < minDistance) {
-                        minDistance = distance
-                        nearestSiteInfo = siteInfo
-                    }
-                }
-                targetChantier = nearestSiteInfo?.let { info -> allChantiersSnapshot.find { it.id == info.chantierId } }
-                val df = DecimalFormat("#.##")
-                message = "Chantier de tonte le plus proche : ${targetChantier?.nomClient ?: nearestSiteInfo?.nomClient ?: "N/A"} à ${df.format(minDistance / 1000f)} km. (Intervention à jour)"
+                val distanceKm = df.format(minDistance / 1000f)
+                val statusMessage = if (urgentSites.isNotEmpty()) "(urgent)" else "(à jour)"
+                message = "Chantier tonte le plus proche ${statusMessage}: ${targetChantier?.nomClient ?: nearestSiteInfo?.nomClient ?: "N/A"} à ${distanceKm} km."
+
             } else {
                 message = "Aucun chantier de tonte éligible trouvé pour la recherche du plus proche."
             }
@@ -706,7 +759,6 @@ class ChantierViewModel(
             onResult(NearestSiteResult(targetChantier, message, finalLatLng))
         }
     }
-    // La fonction privée getChantierById n'est plus nécessaire ici si on utilise le snapshot de tousLesChantiers
 }
 
 class ChantierViewModelFactory(

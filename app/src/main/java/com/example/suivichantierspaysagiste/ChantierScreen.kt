@@ -35,9 +35,9 @@ import kotlinx.coroutines.launch
 
 
 // Cet objet peut être supprimé si vous utilisez MaterialTheme.colorScheme partout
-object ModernColorsScreen {
-    val barBackground = Color(0xFF004D40)
-    val contentColor = Color.White
+object ModernColorsScreen { // Cet objet n'est plus utilisé si les couleurs sont gérées par le thème principal
+    // val barBackground = Color(0xFF004D40)
+    // val contentColor = Color.White
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,30 +50,16 @@ fun ChantierListScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Mes Chantiers") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary, // Utilisation de MaterialTheme
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showDialog = true },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = "Ajouter un chantier")
-            }
-        }
-    ) { innerPadding ->
+    // Le Scaffold principal est maintenant dans MainActivity, donc pas de TopAppBar ici.
+    // Le contenu de l'écran est directement dans une Column ou autre layout.
+    // Le FAB est aussi géré par le Scaffold principal si besoin, ou reste ici s'il est spécifique à cet écran.
+    // Pour cet exemple, on garde le FAB ici car il est lié à l'ajout de chantier.
+
+    Box(modifier = Modifier.fillMaxSize()) { // Utiliser un Box pour positionner le FAB
         Column(
             modifier = Modifier
-                .padding(innerPadding)
+                // .padding(innerPadding) // innerPadding vient du Scaffold principal dans MainActivity
+                .fillMaxSize() // La Column prend toute la place disponible
                 .padding(horizontal = 16.dp)
         ) {
             TextField(
@@ -97,9 +83,8 @@ fun ChantierListScreen(
                     text = "Aucun chantier pour le moment. Cliquez sur le bouton '+' pour en ajouter un.",
                     modifier = Modifier.padding(top = 16.dp).align(Alignment.CenterHorizontally)
                 )
-            }
-            else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) { // fillMaxSize pour prendre la place restante
                     items(chantiers, key = { chantier -> chantier.id }) { chantier ->
                         ChantierItem(
                             chantier = chantier,
@@ -113,13 +98,24 @@ fun ChantierListScreen(
             }
         }
 
+        FloatingActionButton(
+            onClick = { showDialog = true },
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Ajouter un chantier")
+        }
+
         if (showDialog) {
             AjouterChantierDialog(
                 viewModel = viewModel, // Passer le viewModel
                 onDismissRequest = { showDialog = false },
                 onConfirm = { nom, adresse, tonteActive, tailleActive, desherbageActive, latitude, longitude ->
                     viewModel.ajouterChantier(nom, adresse, tonteActive, tailleActive, desherbageActive, latitude, longitude)
-                    viewModel.onSearchQueryChanged("")
+                    viewModel.onSearchQueryChanged("") // Effacer la recherche après ajout
                     showDialog = false
                 }
             )

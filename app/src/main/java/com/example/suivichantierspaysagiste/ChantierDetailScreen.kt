@@ -77,14 +77,22 @@ fun ChantierDetailScreen(
     viewModel: ChantierViewModel,
     navController: NavHostController
 ) {
+    Log.d("ChantierDetailScreen", "Composable ChantierDetailScreen CALLED avec chantierId: $chantierId")
+
     LaunchedEffect(key1 = chantierId) {
+        Log.d("ChantierDetailScreen", "LaunchedEffect pour chantierId: $chantierId - Appel de viewModel.loadChantierById($chantierId)")
         viewModel.loadChantierById(chantierId)
-        Log.d("ChantierDetailScreen", "Chargement du chantier ID: $chantierId")
     }
 
     val chantier by viewModel.selectedChantier.collectAsStateWithLifecycle()
+    Log.d("ChantierDetailScreen", "Collecte de 'chantier': ${chantier?.nomClient ?: "null"}")
+
     val interventions by viewModel.interventionsDuChantier.collectAsStateWithLifecycle()
+    Log.d("ChantierDetailScreen", "Collecte de 'interventions': ${interventions.size} éléments")
+
     val desherbagesPlanifies by viewModel.desherbagesPlanifiesDuChantier.collectAsStateWithLifecycle()
+    Log.d("ChantierDetailScreen", "Collecte de 'desherbagesPlanifies': ${desherbagesPlanifies.size} éléments")
+
 
     val derniereTonte by viewModel.derniereTonte.collectAsStateWithLifecycle()
     val nombreTotalTontes by viewModel.nombreTotalTontes.collectAsStateWithLifecycle()
@@ -127,6 +135,8 @@ fun ChantierDetailScreen(
 
     val context = LocalContext.current
 
+    Log.d("ChantierDetailScreen", "Début de la composition de l'UI pour chantierId: $chantierId")
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -134,11 +144,14 @@ fun ChantierDetailScreen(
             .padding(16.dp)
     ) {
         if (chantier == null) {
+            Log.d("ChantierDetailScreen", "Chantier est null, affichage du CircularProgressIndicator.")
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else {
             val currentChantier = chantier!!
+            Log.d("ChantierDetailScreen", "Affichage des détails pour le chantier: ${currentChantier.nomClient} (ID: ${currentChantier.id})")
+
 
             interventionEnCoursUiState?.let { enCoursUi ->
                 if (enCoursUi.chantierId == currentChantier.id) {
@@ -317,6 +330,8 @@ fun ChantierDetailScreen(
             }
         }
     }
+    Log.d("ChantierDetailScreen", "Fin de la composition de l'UI pour chantierId: $chantierId (chantier est ${if (chantier == null) "null" else "non null"})")
+
 
     if (showEditChantierDialog && chantier != null) {
         EditChantierDialog(

@@ -16,7 +16,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import java.text.SimpleDateFormat
 import java.util.Locale
-import androidx.compose.material.icons.Icons
 // Imports pour les icônes et IconButton si vous voulez un bouton retour
 // import androidx.compose.material.icons.Icons
 // import androidx.compose.material.icons.filled.ArrowBack
@@ -24,6 +23,7 @@ import androidx.compose.material.icons.Icons
 // import androidx.compose.material3.Icon
 
 // Définition d'une couleur pour les boutons, vous pourriez l'ajouter à votre objet ModernColors
+// ou utiliser les couleurs du thème MaterialTheme.colorScheme.
 val ModernButtonBackgroundColor = Color(0xFF00796B) // Un vert sarcelle un peu plus soutenu
 val ModernButtonTextColor = Color.White
 
@@ -36,80 +36,64 @@ fun TaillesPrioritairesScreen(
     // Collecter la liste des tailles prioritaires depuis le ViewModel
     val listeTaillesPrioritaires by viewModel.taillesPrioritaires.collectAsStateWithLifecycle()
     // Collecter l'ordre de tri actuel (pourrait être utilisé pour styler les boutons de tri)
-    val sortOrder by viewModel.taillesSortOrder.collectAsStateWithLifecycle()
+    // val sortOrder by viewModel.taillesSortOrder.collectAsStateWithLifecycle()
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Tailles Prioritaires") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = ModernColors.barBackground, // Utilisez la même couleur
-                    titleContentColor = ModernColors.selectedContent, // Et la même couleur de contenu
-                )
-                // Optionnel: Bouton Retour
-                // navigationIcon = {
-                //    IconButton(onClick = { navController.popBackStack() }) {
-                //        Icon(Icons.Filled.ArrowBack, contentDescription = "Retour")
-                //    }
-                // }
-            )
-        }
-    ) { innerPadding ->
-        Column(
+    // Le Scaffold et la TopAppBar sont gérés dans MainActivity.
+    Column(
+        modifier = Modifier
+            // .padding(innerPadding) // innerPadding vient du Scaffold principal
+            .fillMaxSize()
+            .padding(16.dp) // Marge générale pour le contenu
+    ) {
+        // Section pour les boutons de tri
+        Row(
             modifier = Modifier
-                .padding(innerPadding)
-                .padding(16.dp) // Marge générale pour le contenu
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            // Section pour les boutons de tri
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Button(
-                    onClick = { viewModel.changerOrdreTriTailles(SortOrder.DESC) },
-                    colors = ButtonDefaults.buttonColors( // Personnalisation des couleurs du bouton
-                        containerColor = ModernButtonBackgroundColor,
-                        contentColor = ModernButtonTextColor
-                    )
-                ) {
-                    Text("Plus Urgent")
-                }
-                Button(
-                    onClick = { viewModel.changerOrdreTriTailles(SortOrder.ASC) },
-                    colors = ButtonDefaults.buttonColors( // Personnalisation des couleurs du bouton
-                        containerColor = ModernButtonBackgroundColor,
-                        contentColor = ModernButtonTextColor
-                    )
-                ) {
-                    Text("Moins Urgent")
-                }
-            }
-
-            Divider()
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Affichage de la liste des tailles
-            if (listeTaillesPrioritaires.isEmpty()) {
-                Text(
-                    text = "Aucune taille à afficher ou tous les chantiers sont à jour.",
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+            Button(
+                onClick = { viewModel.changerOrdreTriTailles(SortOrder.DESC) },
+                colors = ButtonDefaults.buttonColors( // Personnalisation des couleurs du bouton
+                    containerColor = ModernButtonBackgroundColor,
+                    contentColor = ModernButtonTextColor
                 )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(listeTaillesPrioritaires) { item ->
-                        TaillePrioritaireListItem( // Nouveau Composable pour les tailles
-                            item = item,
-                            dateFormat = dateFormat,
-                            onClick = {
-                                navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${item.chantierId}")
-                            }
-                        )
-                        Divider()
-                    }
+            ) {
+                Text("Plus Urgent")
+            }
+            Button(
+                onClick = { viewModel.changerOrdreTriTailles(SortOrder.ASC) },
+                colors = ButtonDefaults.buttonColors( // Personnalisation des couleurs du bouton
+                    containerColor = ModernButtonBackgroundColor,
+                    contentColor = ModernButtonTextColor
+                )
+            ) {
+                Text("Moins Urgent")
+            }
+        }
+
+        Divider()
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Affichage de la liste des tailles
+        if (listeTaillesPrioritaires.isEmpty()) {
+            Text(
+                text = "Aucune taille à afficher ou tous les chantiers sont à jour.",
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(listeTaillesPrioritaires) { item ->
+                    TaillePrioritaireListItem( // Nouveau Composable pour les tailles
+                        item = item,
+                        dateFormat = dateFormat,
+                        onClick = {
+                            navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${item.chantierId}")
+                        }
+                    )
+                    Divider()
                 }
             }
         }
