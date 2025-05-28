@@ -1,5 +1,3 @@
-// bumker960/paysagiste/Paysagiste-7f7065bc2423baeb34256c195e7312ae1df9b47d/app/src/main/java/com/example/suivichantierspaysagiste/ChantierViewModel.kt
-
 package com.example.suivichantierspaysagiste
 
 import android.app.Application
@@ -57,7 +55,7 @@ data class DesherbagePrioritaireUiItem(
     val prochaineDatePlanifiee: Date?,
     val planificationId: Long?,
     val urgencyColor: Color,
-    val joursAvantEcheance: Long?
+    val joursAvantEcheance: Long? // Négatif si en retard, positif si à venir, 0 si aujourd'hui
 )
 
 data class InterventionEnCoursUi(
@@ -82,6 +80,19 @@ data class MapChantierData(
     val joursDepuisDerniereTonte: Long?,
     val tonteUrgencyColor: Color,
     val markerHue: Float
+)
+
+// NOUVEAU: Pour la page d'accueil
+data class ApercuTachePrioritaireItem(
+    val chantierId: Long,
+    val nomClient: String,
+    val detail: String, // Ex: "Dernière tonte le JJ/MM/AAAA, X jours écoulés" ou "Planifié pour..."
+    val urgencyColor: Color
+)
+
+data class ResumeFacturationAccueil(
+    val nombrePrestationsAFacturer: Int,
+    val montantTotalEstimeAFacturer: Double
 )
 
 
@@ -121,9 +132,7 @@ class ChantierViewModel(
             if (query.isBlank()) chantiers
             else chantiers.filter { it.nomClient.contains(query, ignoreCase = true) }
         }
-            // MODIFICATION ICI:
-            // Remplacer SharingStarted.WhileSubscribed(5000L) par SharingStarted.Lazily
-            .stateIn(viewModelScope, SharingStarted.Lazily, emptyList()) //
+            .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val _selectedChantierId = MutableStateFlow<Long?>(null)
     val selectedChantierId : StateFlow<Long?> = _selectedChantierId.asStateFlow()
@@ -161,23 +170,28 @@ class ChantierViewModel(
     private val _tontesSortOrder = MutableStateFlow(SortOrder.DESC)
     val tontesSortOrder: StateFlow<SortOrder> = _tontesSortOrder.asStateFlow()
 
-    @Suppress("UNCHECKED_CAST")
     val tontesPrioritaires: StateFlow<List<TontePrioritaireItem>> =
         combine(
             listOf(
                 repository.getTontesPrioritairesFlow(),
-                tousLesChantiers, // Dépend de tousLesChantiers qui est maintenant Lazily
+                tousLesChantiers,
                 _searchQuery,
                 _tontesSortOrder,
                 tonteSeuilVert,
                 tonteSeuilOrange
             )
-        ) { values: Array<Any?> ->
+        ) { values: Array<*> ->
+            @Suppress("UNCHECKED_CAST")
             val tontesInfoList = values[0] as List<TontePrioritaireInfo>
+            @Suppress("UNCHECKED_CAST")
             val allChantiersList = values[1] as List<Chantier>
+            @Suppress("UNCHECKED_CAST")
             val query = values[2] as String
+            @Suppress("UNCHECKED_CAST")
             val sortOrder = values[3] as SortOrder
+            @Suppress("UNCHECKED_CAST")
             val seuilV = values[4] as Int
+            @Suppress("UNCHECKED_CAST")
             val seuilO = values[5] as Int
 
             val chantiersMap = allChantiersList.associateBy { it.id }
@@ -190,25 +204,28 @@ class ChantierViewModel(
 
             val items = filteredTontesInfo.mapNotNull { tonteInfo ->
                 val chantierDetail = chantiersMap[tonteInfo.chantierId]
-                val joursEcoules = tonteInfo.derniereTonteDate?.let { date ->
-                    TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time)
-                }
-                TontePrioritaireItem(
-                    chantierId = tonteInfo.chantierId,
-                    nomClient = tonteInfo.nomClient,
-                    derniereTonteDate = tonteInfo.derniereTonteDate,
-                    joursEcoules = joursEcoules,
-                    urgencyColor = getUrgencyColor(joursEcoules, seuilV, seuilO),
-                    latitude = chantierDetail?.latitude,
-                    longitude = chantierDetail?.longitude
-                )
+                if (chantierDetail?.serviceTonteActive == true) {
+                    val joursEcoules = tonteInfo.derniereTonteDate?.let { date ->
+                        TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time)
+                    }
+                    TontePrioritaireItem(
+                        chantierId = tonteInfo.chantierId,
+                        nomClient = tonteInfo.nomClient,
+                        derniereTonteDate = tonteInfo.derniereTonteDate,
+                        joursEcoules = joursEcoules,
+                        urgencyColor = getUrgencyColor(joursEcoules, seuilV, seuilO),
+                        latitude = chantierDetail.latitude,
+                        longitude = chantierDetail.longitude
+                    )
+                } else null
             }
 
-            when (sortOrder) {
+            val sortedItems = when (sortOrder) {
                 SortOrder.ASC -> items.sortedBy { it.joursEcoules ?: Long.MAX_VALUE }
-                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L } // -1L pour que null (jamais fait) soit le plus urgent
+                SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L }
                 SortOrder.NONE -> items.sortedBy { it.nomClient }
             }
+            sortedItems
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
 
@@ -257,36 +274,57 @@ class ChantierViewModel(
             Color.Red -> 0
             OrangeCustom -> 1
             Color.Green -> 2
-            else -> 3 // Gray or other default
+            else -> 3
         }
     }
 
     val taillesPrioritaires: StateFlow<List<TaillePrioritaireUiItem>> =
         combine(
-            getTaillesInfoFlowFromRepository(), _searchQuery, _taillesSortOrder,
-            tailleSeuil1Vert, tailleSeuil2Orange
-        ) { taillesDbInfoList, query, sortOrder, seuil1V, seuil2O ->
+            listOf(
+                getTaillesInfoFlowFromRepository(),
+                tousLesChantiers,
+                _searchQuery,
+                _taillesSortOrder,
+                tailleSeuil1Vert,
+                tailleSeuil2Orange
+            )
+        ) { values: Array<*> ->
+            @Suppress("UNCHECKED_CAST")
+            val taillesDbInfoList = values[0] as List<TaillePrioritaireDbInfo>
+            @Suppress("UNCHECKED_CAST")
+            val allChantiersList = values[1] as List<Chantier>
+            @Suppress("UNCHECKED_CAST")
+            val query = values[2] as String
+            @Suppress("UNCHECKED_CAST")
+            val sortOrder = values[3] as SortOrder
+            @Suppress("UNCHECKED_CAST")
+            val seuil1V = values[4] as Int
+            @Suppress("UNCHECKED_CAST")
+            val seuil2O = values[5] as Int
+
+            val chantiersMap = allChantiersList.associateBy { it.id }
             val filteredList = if (query.isBlank()) taillesDbInfoList else taillesDbInfoList.filter { it.nomClient.contains(query, ignoreCase = true) }
-            val uiItems = filteredList.map { info ->
-                val joursEcoules = info.derniereTailleDate?.let { date -> TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time) }
-                TaillePrioritaireUiItem(
-                    chantierId = info.chantierId,
-                    nomClient = info.nomClient,
-                    derniereTailleDate = info.derniereTailleDate,
-                    nombreTaillesCetteAnnee = info.nombreTaillesCetteAnnee,
-                    joursEcoules = joursEcoules,
-                    urgencyColor = getUrgencyColorForTaille(info.derniereTailleDate, info.nombreTaillesCetteAnnee, seuil1V, seuil2O)
-                )
+
+            val uiItems = filteredList.mapNotNull { info ->
+                val chantierDetail = chantiersMap[info.chantierId]
+                if (chantierDetail?.serviceTailleActive == true) {
+                    val joursEcoules = info.derniereTailleDate?.let { date -> TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time) }
+                    TaillePrioritaireUiItem(
+                        chantierId = info.chantierId,
+                        nomClient = info.nomClient,
+                        derniereTailleDate = info.derniereTailleDate,
+                        nombreTaillesCetteAnnee = info.nombreTaillesCetteAnnee,
+                        joursEcoules = joursEcoules,
+                        urgencyColor = getUrgencyColorForTaille(info.derniereTailleDate, info.nombreTaillesCetteAnnee, seuil1V, seuil2O)
+                    )
+                } else null
             }
-            // Tri principal par couleur d'urgence (rouge > orange > vert), puis par jours écoulés.
-            // Pour DESC (plus urgent en premier), on trie par score de priorité ascendant (0=Rouge est le plus petit)
-            // puis par jours écoulés descendant (plus de jours = plus urgent)
-            // Pour ASC (moins urgent en premier), c'est l'inverse.
-            when (sortOrder) {
+            val result = when (sortOrder) {
                 SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: -1L })
                 SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MAX_VALUE })
                 SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
             }
+            result
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
     // --- Logique et StateFlows pour le DESHERBAGE ---
@@ -311,16 +349,29 @@ class ChantierViewModel(
         else repository.countInterventionsOfTypeForChantierFlow(id, "Désherbage")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
 
-    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC) // ASC pour date la plus proche en premier
+    private val _desherbagesSortOrder = MutableStateFlow(SortOrder.ASC)
     val desherbagesSortOrder: StateFlow<SortOrder> = _desherbagesSortOrder.asStateFlow()
 
     val desherbagesPrioritaires: StateFlow<List<DesherbagePrioritaireUiItem>> = combine(
-        repository.getAllPendingDesherbagesFlow(),
-        tousLesChantiers, // Dépend de tousLesChantiers
-        _searchQuery,
-        _desherbagesSortOrder,
-        desherbageSeuilOrangeJoursAvant
-    ) { pendingPlanifs, chantiersList, query, sortOrder, seuilOrange ->
+        listOf(
+            repository.getAllPendingDesherbagesFlow(),
+            tousLesChantiers,
+            _searchQuery,
+            _desherbagesSortOrder,
+            desherbageSeuilOrangeJoursAvant
+        )
+    ) { values: Array<*> ->
+        @Suppress("UNCHECKED_CAST")
+        val pendingPlanifs = values[0] as List<DesherbagePlanifie>
+        @Suppress("UNCHECKED_CAST")
+        val chantiersList = values[1] as List<Chantier>
+        @Suppress("UNCHECKED_CAST")
+        val query = values[2] as String
+        @Suppress("UNCHECKED_CAST")
+        val sortOrder = values[3] as SortOrder
+        @Suppress("UNCHECKED_CAST")
+        val seuilOrange = values[4] as Int
+
         val chantierMap = chantiersList.associateBy { it.id }
 
         val uiItems = pendingPlanifs.mapNotNull { planif ->
@@ -346,13 +397,12 @@ class ChantierViewModel(
             else it.nomClient.contains(query, ignoreCase = true)
         }
 
-        // ASC: Plus urgent en premier (date la plus proche, joursAvantEcheance le plus petit)
-        // DESC: Moins urgent en premier (date la plus éloignée, joursAvantEcheance le plus grand)
-        when (sortOrder) {
+        val sortedUiItems = when (sortOrder) {
             SortOrder.ASC -> uiItems.sortedWith(compareBy<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursAvantEcheance ?: Long.MAX_VALUE })
-            SortOrder.DESC -> uiItems.sortedWith(compareByDescending<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursAvantEcheance ?: Long.MIN_VALUE }) // MIN_VALUE pour les nuls en DESC pour les mettre à la fin
+            SortOrder.DESC -> uiItems.sortedWith(compareByDescending<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursAvantEcheance ?: Long.MIN_VALUE })
             SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
         }
+        sortedUiItems
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
 
@@ -391,7 +441,7 @@ class ChantierViewModel(
             .distinctUntilChanged()
 
     val mapData: StateFlow<List<MapChantierData>> = combine(
-        tousLesChantiers, // Dépend de tousLesChantiers
+        tousLesChantiers,
         _rawTontesInfoForAllActiveChantiers,
         tonteSeuilVert,
         tonteSeuilOrange
@@ -417,10 +467,10 @@ class ChantierViewModel(
                         Color.Green -> BitmapDescriptorFactory.HUE_GREEN
                         else -> BitmapDescriptorFactory.HUE_AZURE
                     }
-                } else { // Si service tonte non actif, ou autre service pour la carte plus tard
+                } else {
                     derniereTonteDate = null
                     joursDepuisDerniereTonte = null
-                    var markerColorToUse = BitmapDescriptorFactory.HUE_AZURE // Couleur par défaut pour non-tonte
+                    var markerColorToUse = BitmapDescriptorFactory.HUE_AZURE
                     if(chantier.serviceTailleActive) markerColorToUse = BitmapDescriptorFactory.HUE_ORANGE
                     if(chantier.serviceDesherbageActive && !chantier.serviceTonteActive && !chantier.serviceTailleActive) markerColorToUse = BitmapDescriptorFactory.HUE_YELLOW
 
@@ -446,6 +496,88 @@ class ChantierViewModel(
     val prestationsExtrasFactureesHistorique: StateFlow<List<PrestationHorsContratDisplay>> =
         repository.getPrestationsDisplayByStatut(StatutFacturationExtras.FACTUREE)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+
+    // --- NOUVEAU: StateFlows pour la page d'accueil ---
+    private val dateFormat = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE)
+
+    val apercuTontesUrgentes: StateFlow<List<ApercuTachePrioritaireItem>> =
+        tontesPrioritaires.map { list ->
+            list.take(3).map { tonte ->
+                val detail = if (tonte.derniereTonteDate != null) {
+                    "Dernière tonte le ${dateFormat.format(tonte.derniereTonteDate)}, ${tonte.joursEcoules ?: 0} jours écoulés"
+                } else {
+                    "Jamais tondu"
+                }
+                ApercuTachePrioritaireItem(
+                    chantierId = tonte.chantierId,
+                    nomClient = tonte.nomClient,
+                    detail = detail,
+                    urgencyColor = tonte.urgencyColor
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val nombreTotalTontesUrgentes: StateFlow<Int> = tontesPrioritaires.map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
+
+
+    val apercuTaillesUrgentes: StateFlow<List<ApercuTachePrioritaireItem>> =
+        taillesPrioritaires.map { list ->
+            list.take(3).map { taille ->
+                val detail = if (taille.derniereTailleDate != null) {
+                    "Dernière taille le ${dateFormat.format(taille.derniereTailleDate)}, ${taille.joursEcoules ?: 0} jours écoulés - ${taille.nombreTaillesCetteAnnee}/2 faites"
+                } else {
+                    "Jamais taillé - ${taille.nombreTaillesCetteAnnee}/2 faites"
+                }
+                ApercuTachePrioritaireItem(
+                    chantierId = taille.chantierId,
+                    nomClient = taille.nomClient,
+                    detail = detail,
+                    urgencyColor = taille.urgencyColor
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val nombreTotalTaillesUrgentes: StateFlow<Int> = taillesPrioritaires.map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
+
+
+    val apercuDesherbagesUrgents: StateFlow<List<ApercuTachePrioritaireItem>> =
+        desherbagesPrioritaires.map { list ->
+            list.take(3).map { desherbage ->
+                val detail = if (desherbage.prochaineDatePlanifiee != null) {
+                    val jours = desherbage.joursAvantEcheance
+                    val prefix = when {
+                        jours == null -> ""
+                        jours < 0 -> "En retard de ${-jours} jours"
+                        jours == 0L -> "Aujourd'hui"
+                        else -> "Dans $jours jours"
+                    }
+                    "Planifié pour le ${dateFormat.format(desherbage.prochaineDatePlanifiee)} ($prefix)"
+                } else {
+                    "Aucune planification"
+                }
+                ApercuTachePrioritaireItem(
+                    chantierId = desherbage.chantierId,
+                    nomClient = desherbage.nomClient,
+                    detail = detail,
+                    urgencyColor = desherbage.urgencyColor
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val nombreTotalDesherbagesUrgents: StateFlow<Int> = desherbagesPrioritaires.map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
+
+
+    val resumeFacturationAccueil: StateFlow<ResumeFacturationAccueil> =
+        prestationsExtrasAFacturer.map { list ->
+            ResumeFacturationAccueil(
+                nombrePrestationsAFacturer = list.size,
+                montantTotalEstimeAFacturer = list.sumOf { it.montant }
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), ResumeFacturationAccueil(0, 0.0))
 
 
     fun demarrerInterventionChrono(chantierId: Long, typeIntervention: String, chantierNom: String) {
@@ -530,7 +662,6 @@ class ChantierViewModel(
             } else if (dureeManuelleMillis != null && dureeManuelleMillis > 0) {
                 heureFinEffective = Date(dateDebut.time + dureeManuelleMillis)
             } else {
-                // Si la durée est 0 ou négative, ou si la date de fin n'est pas après le début, on les met à null
                 if (dureeManuelleMillis != null && dureeManuelleMillis <=0) dureeEffectiveMillis = null
                 if (dateFin != null && !dateDebut.before(dateFin)) heureFinEffective = null
             }
@@ -538,12 +669,12 @@ class ChantierViewModel(
             val intervention = Intervention(
                 chantierId = chantierId,
                 typeIntervention = typeIntervention,
-                dateIntervention = heureDebutEffective, // Conserver pour le tri principal
+                dateIntervention = heureDebutEffective,
                 heureDebut = heureDebutEffective,
                 heureFin = heureFinEffective,
                 dureeEffective = dureeEffectiveMillis,
                 notes = notes,
-                statutIntervention = InterventionStatus.COMPLETED.name // Manuelle donc complétée
+                statutIntervention = InterventionStatus.COMPLETED.name
             )
             repository.insertIntervention(intervention)
         }
@@ -567,17 +698,15 @@ class ChantierViewModel(
             } else if (nouvelleDureeMillis != null && nouvelleDureeMillis > 0) {
                 heureFinCalc = Date(nouvelleHeureDebut.time + nouvelleDureeMillis)
             } else {
-                // Réinitialiser si invalide
                 heureFinCalc = null
                 dureeCalc = null
             }
 
             val updatedIntervention = interventionExistante.copy(
-                dateIntervention = nouvelleHeureDebut, // Mettre à jour aussi pour le tri
+                dateIntervention = nouvelleHeureDebut,
                 heureDebut = nouvelleHeureDebut,
                 heureFin = heureFinCalc,
                 dureeEffective = dureeCalc,
-                // Le statut reste COMPLETED si on modifie une intervention déjà terminée
                 statutIntervention = if (heureFinCalc != null) InterventionStatus.COMPLETED.name else interventionExistante.statutIntervention
             )
             repository.updateIntervention(updatedIntervention)
@@ -609,14 +738,6 @@ class ChantierViewModel(
     fun marquerDesherbagePlanifieEffectue(planificationId: Long, dateEffectiveIntervention: Date, notesIntervention: String?) {
         viewModelScope.launch {
             repository.markDesherbagePlanifieAsDone(planificationId)
-            // Optionnel: Ici, on pourrait automatiquement créer une intervention "Désherbage"
-            // si ce n'est pas géré par un démarrage de chrono ou enregistrement manuel.
-            // Pour l'instant, on se contente de marquer la planification.
-            // Exemple:
-            // val planif = repository.desherbagePlanifieDao.getDesherbagePlanifieById(planificationId)
-            // planif?.let {
-            //     enregistrerInterventionManuelle(it.chantierId, "Désherbage", dateEffectiveIntervention, null, notesIntervention)
-            // }
         }
     }
 
@@ -678,7 +799,7 @@ class ChantierViewModel(
         var dateDebutMillis: Long? = null
         var dateFinMillis: Long? = null
         var itemId: Long? = null
-        var itemType: String? = null // "intervention", "planification", "prestation_extra"
+        var itemType: String? = null
 
         when (item) {
             is Intervention -> {
@@ -698,7 +819,7 @@ class ChantierViewModel(
             is DesherbagePlanifie -> {
                 titre = "Désherbage Planifié - $chantierNom"
                 dateDebutMillis = item.datePlanifiee.time
-                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1) // Durée par défaut d'1h
+                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1)
                 description += "\nType: Désherbage Planifié"
                 if (!item.notesPlanification.isNullOrBlank()) {
                     description += "\nNotes de planification: ${item.notesPlanification}"
@@ -709,8 +830,6 @@ class ChantierViewModel(
                 itemId = item.id
                 itemType = "planification"
             }
-            // Gérer PrestationHorsContrat si on veut l'exporter aussi
-            // is PrestationHorsContrat -> { ... }
         }
 
         if (titre != null && dateDebutMillis != null && itemId != null && itemType != null) {
@@ -718,17 +837,15 @@ class ChantierViewModel(
             intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, dateDebutMillis)
             intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, dateFinMillis)
             intent.putExtra(CalendarContract.Events.DESCRIPTION, description)
-            intent.putExtra(CalendarContract.Events.EVENT_LOCATION, selectedChantier.value?.adresse ?: "") // Ou une autre logique pour l'adresse si chantier non sélectionné
+            intent.putExtra(CalendarContract.Events.EVENT_LOCATION, selectedChantier.value?.adresse ?: "")
             intent.putExtra(CalendarContract.Events.ALL_DAY, false)
 
             try {
                 context.startActivity(intent)
-                // Marquer comme exporté dans la BDD
                 viewModelScope.launch {
                     when (itemType) {
                         "intervention" -> repository.marquerInterventionExportee(itemId, true)
                         "planification" -> repository.marquerDesherbagePlanifieExportee(itemId, true)
-                        // "prestation_extra" -> repository.marquerPrestationExtraExportee(itemId, true)
                     }
                 }
             } catch (e: Exception) {
@@ -742,8 +859,8 @@ class ChantierViewModel(
 
     fun findNearestMowingSite(currentUserLocation: LatLng, onResult: (NearestSiteResult) -> Unit) {
         viewModelScope.launch {
-            val allChantiersSnapshot = tousLesChantiers.first() // Prend la valeur actuelle du Flow
-            val potentialSites = tontesPrioritaires.first() // Idem
+            val allChantiersSnapshot = tousLesChantiers.first()
+            val potentialSites = tontesPrioritaires.first()
                 .filter { it.latitude != null && it.longitude != null && it.chantierId != 0L }
 
             if (potentialSites.isEmpty()) {
@@ -756,7 +873,6 @@ class ChantierViewModel(
                 longitude = currentUserLocation.longitude
             }
 
-            // Prioriser les sites urgents (Rouge ou Orange)
             val urgentSites = potentialSites.filter { it.urgencyColor == Color.Red || it.urgencyColor == OrangeCustom }
             val greenSites = potentialSites.filter { it.urgencyColor == Color.Green }
 
@@ -786,7 +902,7 @@ class ChantierViewModel(
                 val statusMessage = if (urgentSites.isNotEmpty() && nearestSiteInfo?.urgencyColor != Color.Green) "(urgent)" else "(à jour)"
                 message = "Chantier tonte le plus proche ${statusMessage}: ${targetChantier?.nomClient ?: nearestSiteInfo?.nomClient ?: "N/A"} à ${distanceKm} km."
 
-            } else { // Aucun site urgent ou vert trouvé (devrait être rare si potentialSites n'est pas vide)
+            } else {
                 message = "Aucun chantier de tonte éligible (urgent ou à jour) trouvé pour la recherche."
             }
 
