@@ -4,27 +4,37 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
+import android.content.Intent // AJOUT: Import pour Intent
 import android.content.pm.PackageManager
 import android.location.Location // IMPORT NÉCESSAIRE POUR LE CALCUL DE DISTANCE
+import android.net.Uri // AJOUT: Import pour Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility // AJOUT: Import pour AnimatedVisibility
+import androidx.compose.animation.slideInVertically // AJOUT: Import pour slideInVertically
+import androidx.compose.animation.slideOutVertically // AJOUT: Import pour slideOutVertically
+import androidx.compose.foundation.layout.Arrangement // AJOUT: Import pour Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column // Pour superposer les FABs
+import androidx.compose.foundation.layout.Row // AJOUT: Import pour Row
 import androidx.compose.foundation.layout.Spacer // Pour espacer les FABs
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth // AJOUT: Import pour fillMaxWidth
 import androidx.compose.foundation.layout.height // Pour espacer les FABs
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Grass // Icône pour Tonte
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.NearMe // Icône pour "chantier le plus proche" (générique)
+import androidx.compose.material.icons.filled.Navigation // AJOUT: Icône pour Navigation
+// import androidx.compose.material.icons.filled.NearMe // Icône pour "chantier le plus proche" (générique) - Déjà commenté
+import androidx.compose.material3.Button // AJOUT: Import pour Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold // Importation de Scaffold, même si on ne l'utilise que pour le FAB
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 // import androidx.compose.material3.TopAppBar // Supprimé car géré globalement
 // import androidx.compose.material3.TopAppBarDefaults // Supprimé
@@ -54,9 +64,9 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.MarkerState // AJOUT: Import explicite, même si déjà utilisé implicitement
 import com.google.maps.android.compose.rememberCameraPositionState
-import com.google.maps.android.compose.rememberMarkerState // Pour gérer l'état du marqueur sélectionné
+// import com.google.maps.android.compose.rememberMarkerState // Pour gérer l'état du marqueur sélectionné - Déjà commenté
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.text.DecimalFormat
@@ -71,10 +81,11 @@ fun MapScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val tousLesChantiers by chantierViewModel.tousLesChantiers.collectAsState()
-    val chantiersAvecCoordonnees = remember(tousLesChantiers) {
-        tousLesChantiers.filter { it.latitude != null && it.longitude != null }
-    }
+    // Utilisation de mapData pour les marqueurs
+    val mapChantiersData by chantierViewModel.mapData.collectAsState()
+
+    // Récupération du chantier sélectionné depuis le ViewModel
+    val selectedMapChantier by chantierViewModel.selectedMapChantier.collectAsState()
 
     val defaultCameraPosition = LatLng(46.2276, 2.2137) // Centre de la France
     val cameraPositionState = rememberCameraPositionState {
@@ -89,7 +100,8 @@ fun MapScreen(
         )
     }
 
-    var selectedMarkerState: MarkerState? by remember { mutableStateOf(null) }
+    // selectedMarkerState n'est plus nécessaire pour suivre le chantier pour l'itinéraire
+    // var selectedMarkerState: MarkerState? by remember { mutableStateOf(null) }
 
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -120,8 +132,7 @@ fun MapScreen(
         } else {
             scope.launch {
                 userLocation = getLastKnownLocation(context, fusedLocationClient)
-                // Centrer sur l'utilisateur seulement si aucun chantier n'est déjà affiché ou si la carte est à sa position par défaut
-                if (cameraPositionState.position.target == defaultCameraPosition || chantiersAvecCoordonnees.isEmpty()) {
+                if (cameraPositionState.position.target == defaultCameraPosition || mapChantiersData.isEmpty()) {
                     userLocation?.let {
                         cameraPositionState.animate(
                             CameraUpdateFactory.newCameraPosition(
@@ -145,10 +156,10 @@ fun MapScreen(
     val uiSettings by remember {
         mutableStateOf(
             MapUiSettings(
-                myLocationButtonEnabled = false, // On utilise notre propre FAB
+                myLocationButtonEnabled = false,
                 zoomControlsEnabled = true,
                 compassEnabled = true,
-                mapToolbarEnabled = false
+                mapToolbarEnabled = true // Garder true pour le comportement par défaut de l'info-bulle
             )
         )
     }
@@ -169,13 +180,28 @@ fun MapScreen(
                         1000
                     )
                 }
-                // Mettre en évidence le marqueur ou ouvrir l'info-bulle si possible
+                // Sélectionner le chantier correspondant pour afficher le bouton d'itinéraire
+                result.chantier?.let { chantierViewModel.setSelectedMapChantier(it) }
             }
         }
     }
 
-    // Le Scaffold ici est uniquement pour gérer les FABs spécifiques à cet écran.
-    // La TopAppBar est gérée globalement.
+    fun launchNavigation(chantier: Chantier) {
+        if (chantier.latitude != null && chantier.longitude != null) {
+            val gmmIntentUri = Uri.parse("geo:${chantier.latitude},${chantier.longitude}?q=${chantier.latitude},${chantier.longitude}(${Uri.encode(chantier.nomClient)})")
+            val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+            // mapIntent.setPackage("com.google.android.apps.maps") // Pour cibler Google Maps spécifiquement
+            if (mapIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(mapIntent)
+            } else {
+                Toast.makeText(context, "Aucune application GPS trouvée.", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Coordonnées du chantier non disponibles.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+
     Scaffold(
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End) {
@@ -197,7 +223,7 @@ fun MapScreen(
                         },
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(bottom = 8.dp) // Espace entre les FABs si plusieurs
+                        modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Icon(Icons.Filled.MyLocation, contentDescription = "Centrer sur ma position")
                     }
@@ -205,18 +231,17 @@ fun MapScreen(
 
                 FloatingActionButton(
                     onClick = { findAndShowNearestMowingSite() },
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer, // Couleur distincte
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                    // pas de padding bottom ici si c'est le dernier FAB
                 ) {
                     Icon(Icons.Filled.Grass, contentDescription = "Chantier de tonte le plus proche")
                 }
             }
         }
-    ) { innerPadding -> // Ce innerPadding vient du Scaffold local, qui est à l'intérieur du Scaffold global
+    ) { innerPadding ->
         Box(
             modifier = Modifier
-                .padding(innerPadding) // Appliquer le padding du Scaffold local (pour les FABs)
+                .padding(innerPadding)
                 .fillMaxSize(),
         ) {
             GoogleMap(
@@ -225,34 +250,63 @@ fun MapScreen(
                 properties = mapProperties,
                 uiSettings = uiSettings,
                 onMapLoaded = {
-                    if (chantiersAvecCoordonnees.isNotEmpty() && userLocation == null && cameraPositionState.position.target == defaultCameraPosition) {
-                        val firstChantierLatLng = LatLng(chantiersAvecCoordonnees.first().latitude!!, chantiersAvecCoordonnees.first().longitude!!)
+                    if (mapChantiersData.isNotEmpty() && userLocation == null && cameraPositionState.position.target == defaultCameraPosition) {
+                        val firstChantierData = mapChantiersData.first()
+                        val firstChantierLatLng = LatLng(firstChantierData.chantier.latitude!!, firstChantierData.chantier.longitude!!)
                         cameraPositionState.move(CameraUpdateFactory.newLatLngZoom(firstChantierLatLng, 10f))
                     }
+                },
+                onMapClick = { // AJOUT: Pour désélectionner le chantier si on clique sur la carte
+                    chantierViewModel.clearSelectedMapChantier()
                 }
             ) {
-                chantiersAvecCoordonnees.forEach { chantier ->
-                    val markerState = rememberMarkerState(position = LatLng(chantier.latitude!!, chantier.longitude!!))
-                    var iconColor = BitmapDescriptorFactory.HUE_GREEN // Couleur par défaut
-
-                    if (chantier.serviceTonteActive) iconColor = BitmapDescriptorFactory.HUE_GREEN
-                    if (chantier.serviceTailleActive && !chantier.serviceTonteActive) iconColor = BitmapDescriptorFactory.HUE_ORANGE
-                    if (chantier.serviceDesherbageActive && !chantier.serviceTonteActive && !chantier.serviceTailleActive) iconColor = BitmapDescriptorFactory.HUE_YELLOW
-
+                mapChantiersData.forEach { mapData ->
+                    val chantier = mapData.chantier
+                    val markerState = MarkerState(position = LatLng(chantier.latitude!!, chantier.longitude!!))
 
                     Marker(
                         state = markerState,
                         title = chantier.nomClient,
                         snippet = chantier.adresse ?: "Aucune adresse",
-                        icon = BitmapDescriptorFactory.defaultMarker(iconColor),
+                        icon = BitmapDescriptorFactory.defaultMarker(mapData.markerHue),
                         onClick = {
-                            selectedMarkerState = markerState
-                            false // Retourner false pour permettre le comportement par défaut (centrer et afficher l'info window)
+                            // Mettre à jour le chantier sélectionné dans le ViewModel
+                            chantierViewModel.setSelectedMapChantier(chantier)
+                            // Laisser l'info-bulle s'afficher par défaut
+                            false
                         },
                         onInfoWindowClick = {
+                            // Naviguer vers les détails si l'info-bulle est cliquée
                             navController.navigate("${ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX}/${chantier.id}")
+                        },
+                        onInfoWindowClose = { // AJOUT: Désélectionner si l'info-bulle est fermée
+                            if (selectedMapChantier == chantier) { // Seulement si c'est le chantier actuellement sélectionné
+                                chantierViewModel.clearSelectedMapChantier()
+                            }
                         }
                     )
+                }
+            }
+
+            // AJOUT: Bouton "Lancer l'itinéraire" en bas de l'écran
+            AnimatedVisibility(
+                visible = selectedMapChantier != null,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp) // Espacement par rapport au bas
+            ) {
+                selectedMapChantier?.let { chantier ->
+                    Button(
+                        onClick = { launchNavigation(chantier) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                    ) {
+                        Icon(Icons.Filled.Navigation, contentDescription = "Icône de navigation", modifier = Modifier.padding(end = 8.dp))
+                        Text("Lancer l'itinéraire vers ${chantier.nomClient}")
+                    }
                 }
             }
         }

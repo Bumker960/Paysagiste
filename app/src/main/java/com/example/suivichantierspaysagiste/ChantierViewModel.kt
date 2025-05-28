@@ -6,6 +6,7 @@ import android.content.Intent
 import android.location.Address
 import android.location.Geocoder
 import android.location.Location
+import android.net.Uri // AJOUT: Import pour Uri
 import android.os.Build
 import android.provider.CalendarContract
 import android.util.Log
@@ -147,6 +148,10 @@ class ChantierViewModel(
         if (id == null) flowOf(emptyList())
         else repository.getInterventionsForChantier(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    // AJOUT: StateFlow pour le chantier sélectionné sur la carte
+    private val _selectedMapChantier = MutableStateFlow<Chantier?>(null)
+    val selectedMapChantier: StateFlow<Chantier?> = _selectedMapChantier.asStateFlow()
 
 
     // --- Logique et StateFlows pour les TONTES ---
@@ -616,6 +621,16 @@ class ChantierViewModel(
         _selectedChantierId.value = null
     }
 
+    // AJOUT: Fonctions pour gérer le chantier sélectionné sur la carte
+    fun setSelectedMapChantier(chantier: Chantier?) {
+        _selectedMapChantier.value = chantier
+    }
+
+    fun clearSelectedMapChantier() {
+        _selectedMapChantier.value = null
+    }
+
+
     fun changerOrdreTriTontes(sortOrder: SortOrder) { _tontesSortOrder.value = sortOrder }
     fun changerOrdreTriTailles(sortOrder: SortOrder) { _taillesSortOrder.value = sortOrder }
     fun changerOrdreTriDesherbages(sortOrder: SortOrder) { _desherbagesSortOrder.value = sortOrder }
@@ -819,7 +834,7 @@ class ChantierViewModel(
             is DesherbagePlanifie -> {
                 titre = "Désherbage Planifié - $chantierNom"
                 dateDebutMillis = item.datePlanifiee.time
-                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1)
+                dateFinMillis = item.datePlanifiee.time + TimeUnit.HOURS.toMillis(1) // Durée par défaut d'une heure
                 description += "\nType: Désherbage Planifié"
                 if (!item.notesPlanification.isNullOrBlank()) {
                     description += "\nNotes de planification: ${item.notesPlanification}"
