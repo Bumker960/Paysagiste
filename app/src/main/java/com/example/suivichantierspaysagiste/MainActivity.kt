@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
 
 // Éléments pour la barre de navigation inférieure
 sealed class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
-    object Accueil : BottomNavItem(ScreenDestinations.ACCUEIL_ROUTE, "Accueil", Icons.Filled.Home) // NOUVEL ITEM
+    object Accueil : BottomNavItem(ScreenDestinations.ACCUEIL_ROUTE, "Accueil", Icons.Filled.Home)
     object Chantiers : BottomNavItem(ScreenDestinations.CHANTIER_LIST_ROUTE, "Chantiers", Icons.Filled.List)
     object TontesPrio : BottomNavItem(ScreenDestinations.TONTES_PRIORITAIRES_ROUTE, "Tontes Prio.", Icons.Filled.Grass)
     object Carte : BottomNavItem(ScreenDestinations.MAP_ROUTE, "Carte", Icons.Filled.LocationOn)
@@ -202,7 +202,7 @@ fun GetCurrentScreenTitle(route: String?, chantierViewModel: ChantierViewModel):
     val selectedChantier by chantierViewModel.selectedChantier.collectAsStateWithLifecycle()
 
     return when {
-        route == ScreenDestinations.ACCUEIL_ROUTE -> "Tableau de Bord" // NOUVEAU TITRE
+        route == ScreenDestinations.ACCUEIL_ROUTE -> "Tableau de Bord"
         route == ScreenDestinations.CHANTIER_LIST_ROUTE -> "Mes Chantiers"
         route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true -> {
             selectedChantier?.nomClient ?: "Détail Chantier"
@@ -232,7 +232,7 @@ fun AppNavigationWithDrawer(
 
 
     val bottomNavItems = listOf(
-        BottomNavItem.Accueil, // MIS EN PREMIÈRE POSITION
+        BottomNavItem.Accueil,
         BottomNavItem.Chantiers,
         BottomNavItem.TontesPrio,
         BottomNavItem.Carte
@@ -276,7 +276,7 @@ fun AppNavigationWithDrawer(
                                     saveState = true
                                 }
                                 launchSingleTop = true
-                                restoreState = true
+                                // restoreState = true // Maintenu commenté pour ce test
                             }
                         },
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
@@ -329,7 +329,6 @@ fun AppNavigationWithDrawer(
                     bottomNavItems.forEach { screen ->
                         val isSelected = currentDestination?.hierarchy?.any { hir ->
                             hir.route == screen.route ||
-                                    // Cas spécial: considérer l'onglet Chantiers comme sélectionné si on est sur un détail de chantier
                                     (screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE && hir.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true)
                         } == true
 
@@ -339,27 +338,14 @@ fun AppNavigationWithDrawer(
                             selected = isSelected,
                             onClick = {
                                 val targetRoute = screen.route
-                                // Naviguer seulement si la destination est différente,
-                                // OU si la cible est Accueil (pour réinitialiser sa pile).
-                                if (currentDestination?.route != targetRoute || targetRoute == ScreenDestinations.ACCUEIL_ROUTE) {
-                                    navController.navigate(targetRoute) {
-                                        if (targetRoute == ScreenDestinations.ACCUEIL_ROUTE) {
-                                            // Pour Accueil, on pop jusqu'à lui-même (inclus) pour vider sa pile interne
-                                            popUpTo(navController.graph.findStartDestination().id) { // graph.findStartDestination().id est ACCUEIL_ROUTE
-                                                inclusive = true
-                                                saveState = true
-                                            }
-                                        } else {
-                                            // Comportement standard pour les autres onglets
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true // Important pour restaurer l'état des onglets
+                                navController.navigate(targetRoute) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
                                     }
+                                    launchSingleTop = true
+                                    // restoreState = true // Temporairement retiré pour diagnostic
                                 }
-                                // Effacer le chantier sélectionné si on navigue vers une liste principale ou l'accueil
+
                                 if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE || targetRoute == ScreenDestinations.ACCUEIL_ROUTE) {
                                     chantierViewModel.clearSelectedChantierId()
                                 }
@@ -378,10 +364,10 @@ fun AppNavigationWithDrawer(
         ) { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = ScreenDestinations.ACCUEIL_ROUTE, // DÉMARRAGE SUR L'ACCUEIL
+                startDestination = ScreenDestinations.ACCUEIL_ROUTE,
                 modifier = Modifier.padding(innerPadding)
             ) {
-                composable(route = ScreenDestinations.ACCUEIL_ROUTE) { // NOUVELLE ROUTE
+                composable(route = ScreenDestinations.ACCUEIL_ROUTE) {
                     HomeScreen(viewModel = chantierViewModel, navController = navController)
                 }
                 composable(route = ScreenDestinations.CHANTIER_LIST_ROUTE) {
