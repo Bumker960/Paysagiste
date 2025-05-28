@@ -9,7 +9,8 @@ class MonApplicationChantiers : Application() {
             database.chantierDao(),
             database.interventionDao(),
             database.desherbagePlanifieDao(),
-            database.prestationHorsContratDao() // Injection du nouveau DAO
+            database.prestationHorsContratDao(),
+            database.devisDao() // Injection du nouveau devisDao
         )
     }
 }

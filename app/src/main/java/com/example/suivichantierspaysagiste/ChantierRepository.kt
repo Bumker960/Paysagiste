@@ -7,7 +7,8 @@ class ChantierRepository(
     private val chantierDao: ChantierDao,
     private val interventionDao: InterventionDao,
     private val desherbagePlanifieDao: DesherbagePlanifieDao,
-    private val prestationHorsContratDao: PrestationHorsContratDao // Ajout du DAO
+    private val prestationHorsContratDao: PrestationHorsContratDao,
+    private val devisDao: DevisDao // Ajout du DAO pour les Devis
 ) {
 
     // --- Fonctions pour les Chantiers (inchangées) ---
@@ -136,7 +137,7 @@ class ChantierRepository(
         return interventionDao.getInterventionEnCours(chantierId, typeIntervention)
     }
 
-    // --- Nouvelles fonctions pour PrestationHorsContrat ---
+    // --- Fonctions pour PrestationHorsContrat (inchangées) ---
     fun getPrestationsDisplayByStatut(statut: StatutFacturationExtras): Flow<List<PrestationHorsContratDisplay>> {
         return prestationHorsContratDao.getPrestationsDisplayByStatut(statut.name)
     }
@@ -155,5 +156,26 @@ class ChantierRepository(
 
     suspend fun getPrestationHorsContratById(id: Long): PrestationHorsContrat? {
         return prestationHorsContratDao.getPrestationById(id)
+    }
+
+    // --- NOUVELLES fonctions pour Devis ---
+    fun getDevisForChantier(chantierId: Long): Flow<List<Devis>> {
+        return devisDao.getDevisForChantier(chantierId)
+    }
+
+    suspend fun insertDevis(devis: Devis): Long {
+        return devisDao.insertDevis(devis)
+    }
+
+    suspend fun deleteDevis(devis: Devis) {
+        devisDao.deleteDevis(devis)
+    }
+
+    suspend fun getDevisById(devisId: Long): Devis? {
+        return devisDao.getDevisById(devisId)
+    }
+
+    suspend fun deleteDevisById(devisId: Long) {
+        devisDao.deleteDevisById(devisId)
     }
 }

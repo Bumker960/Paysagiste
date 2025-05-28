@@ -2,8 +2,12 @@ package com.example.suivichantierspaysagiste
 
 import android.app.TimePickerDialog
 import android.content.Context
+import android.content.Intent // Ajout pour Intent
+import android.net.Uri // Ajout pour Uri
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult // Ajout pour ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts // Ajout pour ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,10 +25,13 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MyLocation // Icône pour géocodage
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PauseCircleOutline
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.AttachFile // Icône pour "Ajouter Devis"
+import androidx.compose.material.icons.filled.PictureAsPdf // Icône pour un devis PDF
+import androidx.compose.material.icons.filled.Visibility // Icône pour "Voir"
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -93,6 +100,9 @@ fun ChantierDetailScreen(
     val desherbagesPlanifies by viewModel.desherbagesPlanifiesDuChantier.collectAsStateWithLifecycle()
     Log.d("ChantierDetailScreen", "Collecte de 'desherbagesPlanifies': ${desherbagesPlanifies.size} éléments")
 
+    // NOUVEAU: Collecte des devis pour le chantier
+    val devisList by viewModel.devisDuChantier.collectAsStateWithLifecycle()
+
 
     val derniereTonte by viewModel.derniereTonte.collectAsStateWithLifecycle()
     val nombreTotalTontes by viewModel.nombreTotalTontes.collectAsStateWithLifecycle()
@@ -133,7 +143,23 @@ fun ChantierDetailScreen(
     var desherbagePlanifieAModifier by remember { mutableStateOf<DesherbagePlanifie?>(null) }
     var desherbagePlanifieASupprimerId by remember { mutableStateOf<Long?>(null) }
 
+    // NOUVEAU: État pour le dialogue de confirmation de suppression de devis
+    var devisASupprimer by remember { mutableStateOf<Devis?>(null) }
+
     val context = LocalContext.current
+
+    // NOUVEAU: Lanceur pour la sélection de fichiers PDF
+    val selectPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri: Uri? ->
+            uri?.let { pdfUri ->
+                chantier?.id?.let { currentChantierId ->
+                    viewModel.ajouterDevisPdf(currentChantierId, pdfUri, context)
+                }
+            }
+        }
+    )
+
 
     Log.d("ChantierDetailScreen", "Début de la composition de l'UI pour chantierId: $chantierId")
 
@@ -190,7 +216,6 @@ fun ChantierDetailScreen(
                     Text(text = "Adresse: $adresse", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
                 }
             }
-            // Affichage des coordonnées si disponibles
             if (currentChantier.latitude != null && currentChantier.longitude != null) {
                 Text(
                     text = "Coordonnées: Lat %.4f, Lng %.4f".format(currentChantier.latitude, currentChantier.longitude),
@@ -201,6 +226,33 @@ fun ChantierDetailScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // --- Section Devis ---
+            ServiceSectionHeader("Devis Associés")
+            Button(
+                onClick = { selectPdfLauncher.launch(arrayOf("application/pdf")) },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Icon(Icons.Filled.AttachFile, contentDescription = "Ajouter un devis", modifier = Modifier.padding(end = 8.dp))
+                Text("Ajouter un Devis PDF")
+            }
+
+            if (devisList.isEmpty()) {
+                Text("Aucun devis associé à ce chantier.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                devisList.forEach { devisItem ->
+                    DevisItemRow(
+                        devis = devisItem,
+                        dateFormat = dateFormat,
+                        onViewClick = { viewModel.visualiserDevisPdf(devisItem, context) },
+                        onDeleteClick = { devisASupprimer = devisItem }
+                    )
+                    Divider()
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            // --- Fin Section Devis ---
+
 
             if (currentChantier.serviceTonteActive) {
                 ServiceSectionChrono(
@@ -336,9 +388,9 @@ fun ChantierDetailScreen(
     if (showEditChantierDialog && chantier != null) {
         EditChantierDialog(
             chantierInitial = chantier!!,
-            viewModel = viewModel, // Passer le viewModel
+            viewModel = viewModel,
             onDismissRequest = { showEditChantierDialog = false },
-            onConfirm = { chantierModifie -> // chantierModifie inclut maintenant lat/lng
+            onConfirm = { chantierModifie ->
                 viewModel.updateChantier(chantierModifie)
                 showEditChantierDialog = false
             }
@@ -348,7 +400,7 @@ fun ChantierDetailScreen(
     if (showDeleteChantierConfirmDialog && chantier != null) {
         ConfirmDeleteDialog(
             title = "Confirmer la suppression",
-            text = "Êtes-vous sûr de vouloir supprimer le chantier \"${chantier!!.nomClient}\" et toutes ses données associées (interventions, planifications) ? Cette action est irréversible.",
+            text = "Êtes-vous sûr de vouloir supprimer le chantier \"${chantier!!.nomClient}\" et toutes ses données associées (interventions, planifications, devis) ? Cette action est irréversible.",
             onConfirm = {
                 viewModel.deleteChantier(chantier!!)
                 showDeleteChantierConfirmDialog = false
@@ -370,6 +422,21 @@ fun ChantierDetailScreen(
             onDismiss = { interventionASupprimer = null }
         )
     }
+
+    // NOUVEAU: Dialogue de confirmation pour la suppression de devis
+    if (devisASupprimer != null) {
+        val devisPourDialogue = devisASupprimer!!
+        ConfirmDeleteDialog(
+            title = "Confirmer la suppression du Devis",
+            text = "Êtes-vous sûr de vouloir supprimer le devis \"${devisPourDialogue.nomOriginal ?: devisPourDialogue.nomFichier}\" ?",
+            onConfirm = {
+                viewModel.supprimerDevis(devisPourDialogue, context)
+                devisASupprimer = null
+            },
+            onDismiss = { devisASupprimer = null }
+        )
+    }
+
 
     if (showEditNoteExpliciteDialog && interventionAModifierNoteExplicite != null) {
         EditInterventionNoteDialog(
@@ -410,7 +477,7 @@ fun ChantierDetailScreen(
             onConfirm = { dateDebut, dateFin, dureeMillis, notes ->
                 if (interventionAModifierTemps != null) {
                     viewModel.modifierTempsIntervention(interventionAModifierTemps!!.id, dateDebut, dateFin, dureeMillis)
-                    if(notes != interventionAModifierTemps!!.notes) { // Mettre à jour les notes seulement si elles ont changé
+                    if(notes != interventionAModifierTemps!!.notes) {
                         viewModel.updateInterventionNotes(interventionAModifierTemps!!, notes)
                     }
                 } else {
@@ -452,8 +519,60 @@ fun ChantierDetailScreen(
     }
 }
 
-// ... (Les autres composables comme ServiceSectionChrono, InterventionEnCoursCard, etc. restent ici)
-// ... Assurez-vous qu'ils sont présents ou importés si définis ailleurs.
+
+// NOUVEAU: Composable pour afficher un item de devis
+@Composable
+fun DevisItemRow(
+    devis: Devis,
+    dateFormat: SimpleDateFormat,
+    onViewClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Icon(
+                Icons.Filled.PictureAsPdf,
+                contentDescription = "Icône Devis PDF",
+                modifier = Modifier.padding(end = 12.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column {
+                Text(
+                    text = devis.nomOriginal ?: devis.nomFichier,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Ajouté le: ${dateFormat.format(devis.dateAjout)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                devis.tailleFichier?.let { taille ->
+                    Text(
+                        text = "Taille: ${android.text.format.Formatter.formatShortFileSize(LocalContext.current, taille)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        }
+        Row {
+            IconButton(onClick = onViewClick, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.Visibility, contentDescription = "Voir le devis", tint = MaterialTheme.colorScheme.secondary)
+            }
+            IconButton(onClick = onDeleteClick, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.Delete, contentDescription = "Supprimer le devis", tint = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
 
 @Composable
 fun ServiceSectionChrono(
@@ -489,7 +608,7 @@ fun ServiceSectionChrono(
             Button(
                 onClick = onDemarrerClick,
                 modifier = Modifier.weight(1f),
-                enabled = interventionEnCoursGlobale == null // Désactivé si N'IMPORTE QUELLE intervention est en cours
+                enabled = interventionEnCoursGlobale == null
             ) { Text("Démarrer") }
             OutlinedButton(
                 onClick = onEnregistrerManuelClick,
@@ -559,15 +678,15 @@ fun InterventionHistoriqueItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp), // Augmentation du padding vertical
+            .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top // Alignement en haut pour les notes longues
+        verticalAlignment = Alignment.Top
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) { // Ajout d'un padding à droite
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
             Text(
                 "${intervention.typeIntervention} - ${intervention.heureDebut?.let { dateTimeFormat.format(it) } ?: dateTimeFormat.format(intervention.dateIntervention)}",
                 fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.bodyLarge // Style un peu plus grand
+                style = MaterialTheme.typography.bodyLarge
             )
             if (intervention.heureFin != null && intervention.dureeEffective != null) {
                 Text(
@@ -584,13 +703,13 @@ fun InterventionHistoriqueItem(
                         "Notes: $notes",
                         style = MaterialTheme.typography.bodySmall,
                         fontStyle = FontStyle.Italic,
-                        modifier = Modifier.padding(start = 4.dp, top = 2.dp) // Léger padding pour les notes
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                     )
                 }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onExportToCalendar, modifier = Modifier.size(40.dp)) { // Taille un peu augmentée
+            IconButton(onClick = onExportToCalendar, modifier = Modifier.size(40.dp)) {
                 Icon(
                     imageVector = if (intervention.exporteAgenda) Icons.Filled.EventAvailable else Icons.Filled.EventNote,
                     contentDescription = if (intervention.exporteAgenda) "Exporté vers l'agenda" else "Ajouter à l'agenda",
@@ -598,7 +717,7 @@ fun InterventionHistoriqueItem(
                 )
             }
             Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) { // Taille un peu augmentée
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "Plus d'options")
                 }
                 DropdownMenu(
@@ -652,7 +771,7 @@ fun EnregistrerTempsManuellementDialog(
         interventionExistante?.dureeEffective?.let { (TimeUnit.MILLISECONDS.toMinutes(it) % 60).toString() } ?: "0"
     )}
 
-    var tabIndex by remember { mutableStateOf(if (interventionExistante?.dureeEffective != null && interventionExistante.heureFin == null) 1 else 0) } // Onglet durée si durée mais pas heure fin
+    var tabIndex by remember { mutableStateOf(if (interventionExistante?.dureeEffective != null && interventionExistante.heureFin == null) 1 else 0) }
 
     LaunchedEffect(interventionExistante) {
         interventionExistante?.let {
@@ -662,14 +781,14 @@ fun EnregistrerTempsManuellementDialog(
                 dateFinState = hf
                 heureFinState = hf
                 tabIndex = 0
-            } ?: run { // Pas d'heure de fin
-                val defaultFin = Date(dateDebut.time + TimeUnit.HOURS.toMillis(1)) // Fin par défaut
+            } ?: run {
+                val defaultFin = Date(dateDebut.time + TimeUnit.HOURS.toMillis(1))
                 dateFinState = defaultFin
                 heureFinState = defaultFin
-                if (it.dureeEffective != null && it.dureeEffective!! > 0) { // Si durée existe, privilégier cet onglet
+                if (it.dureeEffective != null && it.dureeEffective!! > 0) {
                     tabIndex = 1
                 } else {
-                    tabIndex = 0 // Sinon, onglet heure de fin
+                    tabIndex = 0
                 }
             }
             notes = it.notes ?: ""
@@ -677,12 +796,12 @@ fun EnregistrerTempsManuellementDialog(
                 dureeHeures = TimeUnit.MILLISECONDS.toHours(de).toString()
                 dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(de) % 60).toString()
             } ?: run {
-                if(it.heureFin == null){ // Si pas d'heure de fin et pas de durée, mettre durée par défaut
+                if(it.heureFin == null){
                     dureeHeures = "1"
                     dureeMinutes = "0"
                 }
             }
-        } ?: run { // Nouvelle intervention
+        } ?: run {
             val now = Date()
             dateDebut = now
             heureDebut = now
@@ -711,7 +830,7 @@ fun EnregistrerTempsManuellementDialog(
     }
 
     LaunchedEffect(tabIndex, dateDebut, heureDebut, dateFinState, heureFinState) {
-        if (tabIndex == 0) { // Si l'onglet "Heure Fin" est sélectionné
+        if (tabIndex == 0) {
             val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
             val combinedFin = getCombinedDateTime(dateFinState, heureFinState)
             if (combinedFin.after(combinedDebut)) {
@@ -719,7 +838,6 @@ fun EnregistrerTempsManuellementDialog(
                 dureeHeures = TimeUnit.MILLISECONDS.toHours(diff).toString()
                 dureeMinutes = (TimeUnit.MILLISECONDS.toMinutes(diff) % 60).toString()
             } else {
-                // Optionnel: réinitialiser durée si fin < début, ou afficher erreur
                 dureeHeures = "0"
                 dureeMinutes = "0"
             }
@@ -727,7 +845,7 @@ fun EnregistrerTempsManuellementDialog(
     }
 
     LaunchedEffect(tabIndex, dateDebut, heureDebut, dureeHeures, dureeMinutes) {
-        if (tabIndex == 1) { // Si l'onglet "Durée" est sélectionné
+        if (tabIndex == 1) {
             val combinedDebut = getCombinedDateTime(dateDebut, heureDebut)
             val h = dureeHeures.toLongOrNull() ?: 0
             val m = dureeMinutes.toLongOrNull() ?: 0
@@ -880,7 +998,7 @@ fun EnregistrerTempsManuellementDialog(
                             var finalFin: Date? = null
                             var finalDuree: Long? = null
 
-                            if (tabIndex == 0) { // Onglet Heure Fin
+                            if (tabIndex == 0) {
                                 val tempFinalFin = getCombinedDateTime(dateFinState, heureFinState)
                                 if (tempFinalFin.after(finalDebut)) {
                                     finalFin = tempFinalFin
@@ -889,7 +1007,7 @@ fun EnregistrerTempsManuellementDialog(
                                     Toast.makeText(context, "L'heure de fin doit être après l'heure de début.", Toast.LENGTH_LONG).show()
                                     return@Button
                                 }
-                            } else { // Onglet Durée
+                            } else {
                                 val h = dureeHeures.toLongOrNull() ?: 0
                                 val m = dureeMinutes.toLongOrNull() ?: 0
                                 if (h < 0 || m < 0 || m >= 60) {
@@ -897,7 +1015,7 @@ fun EnregistrerTempsManuellementDialog(
                                     return@Button
                                 }
                                 finalDuree = TimeUnit.HOURS.toMillis(h) + TimeUnit.MINUTES.toMillis(m)
-                                if (finalDuree <= 0 && !(h == 0L && m == 0L && interventionExistante != null) ) { // Permettre 0 si modification et c'était déjà 0
+                                if (finalDuree <= 0 && !(h == 0L && m == 0L && interventionExistante != null) ) {
                                     if (finalDuree == 0L && interventionExistante == null) {
                                         Toast.makeText(context, "La durée doit être supérieure à 0.", Toast.LENGTH_LONG).show()
                                         return@Button
@@ -969,9 +1087,9 @@ fun InfoLine(label: String, value: String, color: Color = LocalContentColor.curr
 @Composable
 fun EditChantierDialog(
     chantierInitial: Chantier,
-    viewModel: ChantierViewModel, // ViewModel nécessaire pour le géocodage
+    viewModel: ChantierViewModel,
     onDismissRequest: () -> Unit,
-    onConfirm: (Chantier) -> Unit // Le Chantier contiendra lat/lng
+    onConfirm: (Chantier) -> Unit
 ) {
     var nomClient by remember(chantierInitial.nomClient) { mutableStateOf(chantierInitial.nomClient) }
     var adresse by remember(chantierInitial.adresse) { mutableStateOf(chantierInitial.adresse ?: "") }
@@ -979,7 +1097,6 @@ fun EditChantierDialog(
     var tailleActive by remember(chantierInitial.serviceTailleActive) { mutableStateOf(chantierInitial.serviceTailleActive) }
     var desherbageActive by remember(chantierInitial.serviceDesherbageActive) { mutableStateOf(chantierInitial.serviceDesherbageActive) }
 
-    // États pour les coordonnées et le géocodage
     var latitude by remember(chantierInitial.latitude) { mutableStateOf(chantierInitial.latitude) }
     var longitude by remember(chantierInitial.longitude) { mutableStateOf(chantierInitial.longitude) }
     var geocodingInProgress by remember { mutableStateOf(false) }
@@ -1008,9 +1125,6 @@ fun EditChantierDialog(
                         value = adresse,
                         onValueChange = {
                             adresse = it
-                            // Si l'adresse change, on pourrait vouloir réinitialiser les coordonnées
-                            // ou indiquer qu'elles pourraient ne plus être valides.
-                            // Pour l'instant, on laisse l'utilisateur re-géocoder manuellement.
                             geocodingResultMessage = if (latitude != null && it != chantierInitial.adresse) "Adresse modifiée, re-géocoder si besoin." else null
                         },
                         label = { Text("Adresse (pour géocodage)") },
@@ -1031,9 +1145,6 @@ fun EditChantierDialog(
                                         longitude = latLng.longitude
                                         geocodingResultMessage = "Nouvelles coordonnées trouvées !"
                                     } else {
-                                        // Garder les anciennes coordonnées si le nouveau géocodage échoue ?
-                                        // latitude = null // Ou chantierInitial.latitude
-                                        // longitude = null // Ou chantierInitial.longitude
                                         geocodingResultMessage = "Adresse non trouvée."
                                     }
                                 }
@@ -1074,8 +1185,8 @@ fun EditChantierDialog(
                                     serviceTonteActive = tonteActive,
                                     serviceTailleActive = tailleActive,
                                     serviceDesherbageActive = desherbageActive,
-                                    latitude = latitude, // Sauvegarder les coordonnées
-                                    longitude = longitude // Sauvegarder les coordonnées
+                                    latitude = latitude,
+                                    longitude = longitude
                                 ))
                             }
                         },
@@ -1136,11 +1247,9 @@ fun PlanifierDesherbageDialog(
     var notes by remember(desherbagePlanifieInitial?.notesPlanification) { mutableStateOf(desherbagePlanifieInitial?.notesPlanification ?: "") }
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = desherbagePlanifieInitial?.datePlanifiee?.time ?: System.currentTimeMillis(),
-        selectableDates = AllDatesSelectableDates // Permet de sélectionner toutes les dates
+        selectableDates = AllDatesSelectableDates
     )
     var showDatePicker by remember { mutableStateOf(false) }
-    // Utiliser selectedDateMillis directement pour la confirmation, pas besoin d'un autre état pour la date affichée
-    // var displayedDateMillis by remember(datePickerState.selectedDateMillis) { mutableStateOf(datePickerState.selectedDateMillis ?: System.currentTimeMillis())}
 
 
     Dialog(onDismissRequest = onDismissRequest) {
@@ -1162,7 +1271,6 @@ fun PlanifierDesherbageDialog(
                         onDismissRequest = { showDatePicker = false },
                         confirmButton = {
                             TextButton(onClick = {
-                                // La date est déjà dans datePickerState.selectedDateMillis
                                 showDatePicker = false
                             }) { Text("OK") }
                         },
@@ -1183,7 +1291,7 @@ fun PlanifierDesherbageDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            val confirmedDateMillis = datePickerState.selectedDateMillis ?: System.currentTimeMillis() // Fallback si null
+                            val confirmedDateMillis = datePickerState.selectedDateMillis ?: System.currentTimeMillis()
                             onConfirm(chantierId, Date(confirmedDateMillis), notes.ifBlank { null }, desherbagePlanifieInitial)
                         }
                     ) { Text(if (isEditing) "Enregistrer" else "Planifier") }
@@ -1208,13 +1316,13 @@ fun DesherbagePlanifieItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp), // Padding vertical augmenté
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             Icons.Filled.Event,
             contentDescription = "Date planifiée",
-            modifier = Modifier.padding(end = 12.dp), // Espace augmenté
+            modifier = Modifier.padding(end = 12.dp),
             tint = itemColor
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -1232,7 +1340,6 @@ fun DesherbagePlanifieItem(
                 }
             }
         }
-        // Actions
         Row {
             if (!planification.estEffectue) {
                 IconButton(onClick = onMarkAsDone, modifier = Modifier.size(40.dp)) {

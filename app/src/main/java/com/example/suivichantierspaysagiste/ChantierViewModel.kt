@@ -1,16 +1,19 @@
 package com.example.suivichantierspaysagiste
 
 import android.app.Application
+import android.content.ActivityNotFoundException // Ajout pour intercepter l'erreur
 import android.content.Context
 import android.content.Intent
 import android.location.Address
 import android.location.Geocoder
 import android.location.Location
-import android.net.Uri // AJOUT: Import pour Uri
+import android.net.Uri
 import android.os.Build
 import android.provider.CalendarContract
+import android.provider.OpenableColumns // Ajout pour obtenir le nom et la taille du fichier
 import android.util.Log
 import android.widget.Toast
+import androidx.core.content.FileProvider // Ajout pour FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -27,6 +30,8 @@ import androidx.compose.ui.graphics.Color
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.Dispatchers
+import java.io.File // Ajout pour la gestion des fichiers
+import java.io.FileOutputStream // Ajout pour la copie de fichiers
 import java.io.IOException
 import java.text.DecimalFormat
 
@@ -56,7 +61,7 @@ data class DesherbagePrioritaireUiItem(
     val prochaineDatePlanifiee: Date?,
     val planificationId: Long?,
     val urgencyColor: Color,
-    val joursAvantEcheance: Long? // Négatif si en retard, positif si à venir, 0 si aujourd'hui
+    val joursAvantEcheance: Long?
 )
 
 data class InterventionEnCoursUi(
@@ -83,11 +88,10 @@ data class MapChantierData(
     val markerHue: Float
 )
 
-// NOUVEAU: Pour la page d'accueil
 data class ApercuTachePrioritaireItem(
     val chantierId: Long,
     val nomClient: String,
-    val detail: String, // Ex: "Dernière tonte le JJ/MM/AAAA, X jours écoulés" ou "Planifié pour..."
+    val detail: String,
     val urgencyColor: Color
 )
 
@@ -149,7 +153,13 @@ class ChantierViewModel(
         else repository.getInterventionsForChantier(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
-    // AJOUT: StateFlow pour le chantier sélectionné sur la carte
+    // NOUVEAU: StateFlow pour les devis du chantier sélectionné
+    val devisDuChantier: StateFlow<List<Devis>> = _selectedChantierId.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList())
+        else repository.getDevisForChantier(id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+
     private val _selectedMapChantier = MutableStateFlow<Chantier?>(null)
     val selectedMapChantier: StateFlow<Chantier?> = _selectedMapChantier.asStateFlow()
 
@@ -229,7 +239,6 @@ class ChantierViewModel(
                 SortOrder.ASC -> items.sortedBy { it.joursEcoules ?: Long.MAX_VALUE }
                 SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L }
                 SortOrder.NONE -> items.sortedBy { it.nomClient }
-                // else -> items // Ajout pour exhaustivité si l'IDE le demande encore
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
@@ -328,7 +337,6 @@ class ChantierViewModel(
                 SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: -1L })
                 SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MAX_VALUE })
                 SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
-                // else -> uiItems // Ajout pour exhaustivité
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
@@ -406,7 +414,6 @@ class ChantierViewModel(
             SortOrder.ASC -> uiItems.sortedWith(compareBy<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursAvantEcheance ?: Long.MAX_VALUE })
             SortOrder.DESC -> uiItems.sortedWith(compareByDescending<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursAvantEcheance ?: Long.MIN_VALUE })
             SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
-            // else -> uiItems // Ajout pour exhaustivité
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
@@ -621,7 +628,6 @@ class ChantierViewModel(
         _selectedChantierId.value = null
     }
 
-    // AJOUT: Fonctions pour gérer le chantier sélectionné sur la carte
     fun setSelectedMapChantier(chantier: Chantier?) {
         _selectedMapChantier.value = chantier
     }
@@ -1005,6 +1011,148 @@ class ChantierViewModel(
                 repository.updatePrestationHorsContrat(updatedPrestation)
                 Toast.makeText(applicationContext, "Prestation remise à facturer.", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    // --- NOUVELLES fonctions pour la gestion des Devis PDF ---
+
+    /**
+     * Gère la copie d'un fichier PDF sélectionné par l'utilisateur vers le stockage interne de l'application
+     * et enregistre ensuite sa référence dans la base de données.
+     */
+    fun ajouterDevisPdf(chantierId: Long, pdfUri: Uri, context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // 1. Obtenir le nom original et la taille du fichier (optionnel mais utile)
+                var nomOriginal: String? = null
+                var tailleFichier: Long? = null
+                context.contentResolver.query(pdfUri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nomIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nomIndex != -1) nomOriginal = cursor.getString(nomIndex)
+
+                        val tailleIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (tailleIndex != -1) tailleFichier = cursor.getLong(tailleIndex)
+                    }
+                }
+                if (nomOriginal == null) { // Fallback si le nom n'a pas pu être récupéré
+                    nomOriginal = "devis_${System.currentTimeMillis()}.pdf"
+                }
+
+
+                // 2. Déterminer un nom de fichier unique pour le stockage interne
+                val extension = nomOriginal?.substringAfterLast('.', "") ?: "pdf"
+                val nomFichierInterne = "devis_chantier${chantierId}_${System.currentTimeMillis()}.$extension"
+
+                // 3. Créer le répertoire de destination s'il n'existe pas
+                val dossierDevis = File(context.filesDir, "dossier_devis")
+                if (!dossierDevis.exists()) {
+                    dossierDevis.mkdirs()
+                }
+
+                // 4. Copier le fichier
+                val fichierDestination = File(dossierDevis, nomFichierInterne)
+                context.contentResolver.openInputStream(pdfUri)?.use { inputStream ->
+                    FileOutputStream(fichierDestination).use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                } ?: throw IOException("Impossible d'ouvrir InputStream pour l'URI: $pdfUri")
+
+                // 5. Enregistrer la référence dans Room
+                val nouveauDevis = Devis(
+                    chantierId = chantierId,
+                    nomFichier = nomFichierInterne, // Stocker seulement le nom du fichier, pas le chemin complet
+                    nomOriginal = nomOriginal,
+                    dateAjout = Date(),
+                    tailleFichier = tailleFichier
+                )
+                repository.insertDevis(nouveauDevis)
+
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Devis '${nomOriginal}' ajouté avec succès.", Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                Log.e("ChantierViewModel", "Erreur lors de l'ajout du devis PDF", e)
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Erreur lors de l'ajout du devis: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * Supprime un devis de la base de données et le fichier PDF associé du stockage interne.
+     */
+    fun supprimerDevis(devis: Devis, context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // 1. Supprimer le fichier du stockage interne
+                val dossierDevis = File(context.filesDir, "dossier_devis")
+                val fichierASupprimer = File(dossierDevis, devis.nomFichier)
+                if (fichierASupprimer.exists()) {
+                    if (!fichierASupprimer.delete()) {
+                        Log.w("ChantierViewModel", "Échec de la suppression du fichier: ${fichierASupprimer.absolutePath}")
+                        // Continuer pour supprimer l'entrée de la DB même si le fichier n'est pas supprimé
+                    }
+                } else {
+                    Log.w("ChantierViewModel", "Fichier devis non trouvé pour suppression: ${fichierASupprimer.absolutePath}")
+                }
+
+                // 2. Supprimer l'entrée de la base de données
+                repository.deleteDevis(devis)
+
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Devis '${devis.nomOriginal ?: devis.nomFichier}' supprimé.", Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                Log.e("ChantierViewModel", "Erreur lors de la suppression du devis", e)
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Erreur lors de la suppression du devis: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * Ouvre un devis PDF en utilisant une application externe via FileProvider.
+     */
+    fun visualiserDevisPdf(devis: Devis, context: Context) {
+        try {
+            val dossierDevis = File(context.filesDir, "dossier_devis")
+            val fichierPdf = File(dossierDevis, devis.nomFichier)
+
+            if (!fichierPdf.exists()) {
+                Toast.makeText(context, "Fichier PDF non trouvé.", Toast.LENGTH_LONG).show()
+                Log.e("ChantierViewModel", "Fichier PDF non trouvé: ${fichierPdf.absolutePath}")
+                return
+            }
+
+            val authority = "${context.packageName}.provider"
+            val uri = FileProvider.getUriForFile(context, authority, fichierPdf)
+            Log.d("ChantierViewModel", "Attempting to view PDF with URI: $uri, Authority: $authority")
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Ré-ajouté pour robustesse
+            }
+
+            // Vérifier si une activité peut gérer l'intent
+            if (intent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(intent)
+            } else {
+                Log.w("ChantierViewModel", "No activity found to handle PDF intent for URI: $uri")
+                Toast.makeText(context, "Aucune application trouvée pour ouvrir les PDF. Veuillez en installer une.", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: ActivityNotFoundException) { // Intercepter spécifiquement si aucune activité n'est trouvée
+            Log.e("ChantierViewModel", "ActivityNotFoundException: No application found to open PDF.", e)
+            Toast.makeText(context, "Aucune application trouvée pour ouvrir les PDF. Veuillez en installer une.", Toast.LENGTH_LONG).show()
+        }
+        catch (e: Exception) { // Intercepter d'autres exceptions potentielles
+            Log.e("ChantierViewModel", "Erreur lors de la visualisation du PDF", e)
+            Toast.makeText(context, "Erreur lors de la tentative d'ouverture du PDF: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }

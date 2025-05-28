@@ -8,15 +8,16 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-// VERSION INCLEMENTÉE à 7 pour la nouvelle migration
-@Database(entities = [Chantier::class, Intervention::class, DesherbagePlanifie::class, PrestationHorsContrat::class], version = 7, exportSchema = false)
+// VERSION INCLEMENTÉE à 8 pour la nouvelle migration
+@Database(entities = [Chantier::class, Intervention::class, DesherbagePlanifie::class, PrestationHorsContrat::class, Devis::class], version = 8, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun chantierDao(): ChantierDao
     abstract fun interventionDao(): InterventionDao
     abstract fun desherbagePlanifieDao(): DesherbagePlanifieDao
-    abstract fun prestationHorsContratDao(): PrestationHorsContratDao // Nouveau DAO
+    abstract fun prestationHorsContratDao(): PrestationHorsContratDao
+    abstract fun devisDao(): DevisDao // Nouveau DAO pour les Devis
 
     companion object {
         @Volatile
@@ -55,7 +56,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `interventions` ADD COLUMN `heureFin` INTEGER")
                 db.execSQL("ALTER TABLE `interventions` ADD COLUMN `dureeEffective` INTEGER")
                 db.execSQL("ALTER TABLE `interventions` ADD COLUMN `statutIntervention` TEXT NOT NULL DEFAULT '${InterventionStatus.COMPLETED.name}'")
-                // Mise à jour de heureDebut pour les anciennes interventions
                 db.execSQL("UPDATE `interventions` SET `heureDebut` = `dateIntervention` WHERE `heureDebut` IS NULL")
             }
         }
@@ -68,13 +68,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // NOUVELLE migration de la version 6 à 7 pour ajouter la table prestations_extras
+        // Migration existante de la version 6 à 7 pour ajouter la table prestations_extras
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `prestations_extras` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `chantierId` INTEGER, 
+                        `chantierId` INTEGER,
                         `referenceChantierTexteLibre` TEXT,
                         `description` TEXT NOT NULL,
                         `datePrestation` INTEGER NOT NULL,
@@ -84,10 +84,26 @@ abstract class AppDatabase : RoomDatabase() {
                         FOREIGN KEY(`chantierId`) REFERENCES `chantiers`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
                     )
                 """)
-                // Index optionnel sur chantierId si vous faites souvent des recherches par ce biais
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_prestations_extras_chantierId` ON `prestations_extras` (`chantierId`)")
-                // Index optionnel sur statut pour accélérer le filtrage par onglet
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_prestations_extras_statut` ON `prestations_extras` (`statut`)")
+            }
+        }
+
+        // NOUVELLE migration de la version 7 à 8 pour ajouter la table devis
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `devis` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `chantierId` INTEGER NOT NULL,
+                        `nomFichier` TEXT NOT NULL,
+                        `nomOriginal` TEXT,
+                        `dateAjout` INTEGER NOT NULL,
+                        `tailleFichier` INTEGER,
+                        FOREIGN KEY(`chantierId`) REFERENCES `chantiers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_devis_chantierId` ON `devis` (`chantierId`)")
             }
         }
 
@@ -98,7 +114,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "suivi_chantiers_database"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7) // Ajout de la nouvelle migration
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8) // Ajout de la nouvelle migration 7_8
                     .fallbackToDestructiveMigrationFrom(1) // Conservez ou ajustez selon votre stratégie
                     .build()
                 INSTANCE = instance
