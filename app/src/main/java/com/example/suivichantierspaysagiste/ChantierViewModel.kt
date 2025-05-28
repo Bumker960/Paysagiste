@@ -194,15 +194,15 @@ class ChantierViewModel(
             @Suppress("UNCHECKED_CAST")
             val seuilO = values[5] as Int
 
-            val chantiersMap = allChantiersList.associateBy { it.id }
+            val chantiersMap = allChantiersList.associateBy { chantier: Chantier -> chantier.id }
 
             val filteredTontesInfo = if (query.isBlank()) {
                 tontesInfoList
             } else {
-                tontesInfoList.filter { it.nomClient.contains(query, ignoreCase = true) }
+                tontesInfoList.filter { tonteInfo: TontePrioritaireInfo -> tonteInfo.nomClient.contains(query, ignoreCase = true) }
             }
 
-            val items = filteredTontesInfo.mapNotNull { tonteInfo ->
+            val items = filteredTontesInfo.mapNotNull { tonteInfo: TontePrioritaireInfo ->
                 val chantierDetail = chantiersMap[tonteInfo.chantierId]
                 if (chantierDetail?.serviceTonteActive == true) {
                     val joursEcoules = tonteInfo.derniereTonteDate?.let { date ->
@@ -220,12 +220,12 @@ class ChantierViewModel(
                 } else null
             }
 
-            val sortedItems = when (sortOrder) {
+            when (sortOrder) {
                 SortOrder.ASC -> items.sortedBy { it.joursEcoules ?: Long.MAX_VALUE }
                 SortOrder.DESC -> items.sortedByDescending { it.joursEcoules ?: -1L }
                 SortOrder.NONE -> items.sortedBy { it.nomClient }
+                // else -> items // Ajout pour exhaustivité si l'IDE le demande encore
             }
-            sortedItems
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
 
@@ -302,10 +302,10 @@ class ChantierViewModel(
             @Suppress("UNCHECKED_CAST")
             val seuil2O = values[5] as Int
 
-            val chantiersMap = allChantiersList.associateBy { it.id }
-            val filteredList = if (query.isBlank()) taillesDbInfoList else taillesDbInfoList.filter { it.nomClient.contains(query, ignoreCase = true) }
+            val chantiersMap = allChantiersList.associateBy { chantier: Chantier -> chantier.id }
+            val filteredList = if (query.isBlank()) taillesDbInfoList else taillesDbInfoList.filter { tailleInfo: TaillePrioritaireDbInfo -> tailleInfo.nomClient.contains(query, ignoreCase = true) }
 
-            val uiItems = filteredList.mapNotNull { info ->
+            val uiItems = filteredList.mapNotNull { info: TaillePrioritaireDbInfo ->
                 val chantierDetail = chantiersMap[info.chantierId]
                 if (chantierDetail?.serviceTailleActive == true) {
                     val joursEcoules = info.derniereTailleDate?.let { date -> TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - date.time) }
@@ -319,12 +319,12 @@ class ChantierViewModel(
                     )
                 } else null
             }
-            val result = when (sortOrder) {
+            when (sortOrder) {
                 SortOrder.DESC -> uiItems.sortedWith( compareBy<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursEcoules ?: -1L })
                 SortOrder.ASC -> uiItems.sortedWith( compareByDescending<TaillePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursEcoules ?: Long.MAX_VALUE })
                 SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
+                // else -> uiItems // Ajout pour exhaustivité
             }
-            result
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
     // --- Logique et StateFlows pour le DESHERBAGE ---
@@ -372,9 +372,9 @@ class ChantierViewModel(
         @Suppress("UNCHECKED_CAST")
         val seuilOrange = values[4] as Int
 
-        val chantierMap = chantiersList.associateBy { it.id }
+        val chantierMap = chantiersList.associateBy { chantier: Chantier -> chantier.id }
 
-        val uiItems = pendingPlanifs.mapNotNull { planif ->
+        val uiItems = pendingPlanifs.mapNotNull { planif: DesherbagePlanifie ->
             chantierMap[planif.chantierId]?.let { chantier ->
                 if (chantier.serviceDesherbageActive) {
                     val joursAvantEcheance = planif.datePlanifiee.let { date ->
@@ -392,17 +392,17 @@ class ChantierViewModel(
                     )
                 } else null
             }
-        }.filter {
+        }.filter { desherbageItem: DesherbagePrioritaireUiItem ->
             if (query.isBlank()) true
-            else it.nomClient.contains(query, ignoreCase = true)
+            else desherbageItem.nomClient.contains(query, ignoreCase = true)
         }
 
-        val sortedUiItems = when (sortOrder) {
+        when (sortOrder) {
             SortOrder.ASC -> uiItems.sortedWith(compareBy<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenBy { it.joursAvantEcheance ?: Long.MAX_VALUE })
             SortOrder.DESC -> uiItems.sortedWith(compareByDescending<DesherbagePrioritaireUiItem> { getPriorityScore(it.urgencyColor) }.thenByDescending { it.joursAvantEcheance ?: Long.MIN_VALUE })
             SortOrder.NONE -> uiItems.sortedBy { it.nomClient }
+            // else -> uiItems // Ajout pour exhaustivité
         }
-        sortedUiItems
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
 

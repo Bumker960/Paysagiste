@@ -18,7 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.* import androidx.compose.material3.Divider
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -326,25 +327,39 @@ fun AppNavigationWithDrawer(
                     val currentDestination = navBackStackEntry?.destination
 
                     bottomNavItems.forEach { screen ->
-                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route || (it.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true && screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE) } == true
+                        val isSelected = currentDestination?.hierarchy?.any { hir ->
+                            hir.route == screen.route ||
+                                    // Cas spécial: considérer l'onglet Chantiers comme sélectionné si on est sur un détail de chantier
+                                    (screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE && hir.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true)
+                        } == true
+
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.label) },
                             label = { Text(screen.label) },
                             selected = isSelected,
                             onClick = {
                                 val targetRoute = screen.route
-                                if (currentDestination?.route != targetRoute) {
+                                // Naviguer seulement si la destination est différente,
+                                // OU si la cible est Accueil (pour réinitialiser sa pile).
+                                if (currentDestination?.route != targetRoute || targetRoute == ScreenDestinations.ACCUEIL_ROUTE) {
                                     navController.navigate(targetRoute) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                            inclusive = targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true
+                                        if (targetRoute == ScreenDestinations.ACCUEIL_ROUTE) {
+                                            // Pour Accueil, on pop jusqu'à lui-même (inclus) pour vider sa pile interne
+                                            popUpTo(navController.graph.findStartDestination().id) { // graph.findStartDestination().id est ACCUEIL_ROUTE
+                                                inclusive = true
+                                                saveState = true
+                                            }
+                                        } else {
+                                            // Comportement standard pour les autres onglets
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
                                         }
                                         launchSingleTop = true
-                                        restoreState = true
+                                        restoreState = true // Important pour restaurer l'état des onglets
                                     }
-                                } else if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE && currentDestination?.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true) {
-                                    navController.popBackStack(ScreenDestinations.CHANTIER_LIST_ROUTE, inclusive = false)
                                 }
+                                // Effacer le chantier sélectionné si on navigue vers une liste principale ou l'accueil
                                 if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE || targetRoute == ScreenDestinations.ACCUEIL_ROUTE) {
                                     chantierViewModel.clearSelectedChantierId()
                                 }
@@ -412,4 +427,3 @@ fun AppNavigationWithDrawer(
         }
     }
 }
-
