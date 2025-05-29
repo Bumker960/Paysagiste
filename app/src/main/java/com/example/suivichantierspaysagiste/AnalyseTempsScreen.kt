@@ -177,7 +177,14 @@ fun AnalyseTempsScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             chantiersPlusChronophages.forEach { chantierTemps ->
-                                InfoRow(label = chantierTemps.nomClient, value = formatMillisToHoursMinutes(chantierTemps.tempsTotalMillis))
+                                // MODIFICATION ICI: InfoRow devient cliquable
+                                InfoRow(
+                                    label = chantierTemps.nomClient,
+                                    value = formatMillisToHoursMinutes(chantierTemps.tempsTotalMillis),
+                                    modifier = Modifier.clickable {
+                                        viewModel.setAnalyseTempsChantierId(chantierTemps.chantierId)
+                                    }
+                                )
                             }
                         }
                     }
@@ -211,6 +218,7 @@ fun AnalyseTempsScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 tempsParTypeInterventionGlobal.forEach { typeTemps ->
                                     val pourcentage = (typeTemps.tempsTotalMillis.toDouble() / totalGlobalPourcentage.toDouble() * 100)
+                                    // Pour l'instant, cette liste n'est pas cliquable pour la navigation
                                     InfoRow(
                                         label = typeTemps.typeIntervention,
                                         value = "${formatMillisToHoursMinutes(typeTemps.tempsTotalMillis)} (${String.format("%.1f", pourcentage)}%)"
@@ -259,6 +267,7 @@ fun AnalyseTempsScreen(
                                 }
                                 detail.detailsParType.forEach { typeTemps ->
                                     val pourcentage = if (detail.tempsTotalMillis > 0) (typeTemps.tempsTotalMillis.toDouble() / detail.tempsTotalMillis.toDouble() * 100) else 0.0
+                                    // Pour l'instant, cette liste n'est pas cliquable pour la navigation
                                     InfoRow(
                                         label = typeTemps.typeIntervention,
                                         value = "${formatMillisToHoursMinutes(typeTemps.tempsTotalMillis)} (${String.format("%.1f", pourcentage)}%)"
@@ -290,7 +299,7 @@ fun SectionTitle(title: String) {
 @Composable
 fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier
+        modifier = modifier // Le modificateur est appliqué ici, incluant le .clickable si fourni
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
