@@ -1,32 +1,32 @@
 package com.example.suivichantierspaysagiste
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll // Ajout pour le défilement horizontal
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState // Ajout pour le défilement
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalDensity // Ajout pour convertir Dp en Px si besoin pour Canvas
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import java.util.concurrent.TimeUnit
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
-import android.graphics.Paint
-import android.graphics.RectF
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp // Importation ajoutée
+import android.graphics.Paint as AndroidPaint // Alias pour éviter confusion si Paint de Compose est utilisé
+import androidx.compose.foundation.background // Importation ajoutée
 
 
 // Helper pour formater la durée en heures et minutes
@@ -59,6 +59,18 @@ fun AnalyseTempsScreen(
 
     var periodeDropdownExpanded by remember { mutableStateOf(false) }
     var chantierDropdownExpanded by remember { mutableStateOf(false) }
+
+    val pieChartColors = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.secondary,
+        MaterialTheme.colorScheme.tertiary,
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f),
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f),
+        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.8f),
+        Color.Cyan.copy(alpha=0.7f),
+        Color.Magenta.copy(alpha=0.7f)
+    )
+
 
     LazyColumn(
         modifier = Modifier
@@ -168,16 +180,17 @@ fun AnalyseTempsScreen(
                             Text("Aucune donnée d'intervention pour cette période.")
                         } else {
                             BarChart(
-                                data = chantiersPlusChronophages.take(5).associate {
+                                // MODIFICATION ICI: .take(10) retiré
+                                data = chantiersPlusChronophages.associate {
                                     it.nomClient to (it.tempsTotalMillis.toFloat() / (1000 * 60 * 60)) // en heures
                                 },
                                 barColor = MaterialTheme.colorScheme.primary,
                                 axisColor = MaterialTheme.colorScheme.onSurface,
-                                label = "h" // Label pour heures
+                                label = "h"
                             )
                             Spacer(modifier = Modifier.height(8.dp))
+                            // La liste détaillée sous le graphique reste, car le graphique peut être tronqué
                             chantiersPlusChronophages.forEach { chantierTemps ->
-                                // MODIFICATION ICI: InfoRow devient cliquable
                                 InfoRow(
                                     label = chantierTemps.nomClient,
                                     value = formatMillisToHoursMinutes(chantierTemps.tempsTotalMillis),
@@ -202,27 +215,27 @@ fun AnalyseTempsScreen(
                         } else {
                             val totalGlobalPourcentage = tempsParTypeInterventionGlobal.sumOf { it.tempsTotalMillis }.toFloat()
                             if (totalGlobalPourcentage > 0) {
-                                PieChart(
-                                    data = tempsParTypeInterventionGlobal.associate {
-                                        it.typeIntervention to (it.tempsTotalMillis.toFloat() / totalGlobalPourcentage)
-                                    },
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.secondary,
-                                        MaterialTheme.colorScheme.tertiary,
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
-                                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    PieChart(
+                                        data = tempsParTypeInterventionGlobal.associate {
+                                            it.typeIntervention to (it.tempsTotalMillis.toFloat() / totalGlobalPourcentage)
+                                        },
+                                        colors = pieChartColors,
+                                        modifier = Modifier.weight(0.5f) // Le graphique prend de la place
                                     )
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                tempsParTypeInterventionGlobal.forEach { typeTemps ->
-                                    val pourcentage = (typeTemps.tempsTotalMillis.toDouble() / totalGlobalPourcentage.toDouble() * 100)
-                                    // Pour l'instant, cette liste n'est pas cliquable pour la navigation
-                                    InfoRow(
-                                        label = typeTemps.typeIntervention,
-                                        value = "${formatMillisToHoursMinutes(typeTemps.tempsTotalMillis)} (${String.format("%.1f", pourcentage)}%)"
-                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(0.5f)) { // La légende prend de la place
+                                        tempsParTypeInterventionGlobal.forEachIndexed { index, typeTemps ->
+                                            val pourcentage = (typeTemps.tempsTotalMillis.toDouble() / totalGlobalPourcentage.toDouble() * 100)
+                                            LegendItem(
+                                                color = pieChartColors.getOrElse(index) { Color.Gray },
+                                                text = "${typeTemps.typeIntervention}: ${formatMillisToHoursMinutes(typeTemps.tempsTotalMillis)} (${String.format("%.1f", pourcentage)}%)"
+                                            )
+                                        }
+                                    }
                                 }
                             } else {
                                 Text("Aucun temps enregistré pour cette période.")
@@ -251,27 +264,35 @@ fun AnalyseTempsScreen(
                                 Text("Aucune intervention enregistrée pour ce chantier sur cette période.")
                             } else {
                                 if (detail.tempsTotalMillis > 0) {
-                                    PieChart(
-                                        data = detail.detailsParType.associate {
-                                            it.typeIntervention to (it.tempsTotalMillis.toFloat() / detail.tempsTotalMillis.toFloat())
-                                        },
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.primary,
-                                            MaterialTheme.colorScheme.secondary,
-                                            MaterialTheme.colorScheme.tertiary,
-                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        PieChart(
+                                            data = detail.detailsParType.associate {
+                                                it.typeIntervention to (it.tempsTotalMillis.toFloat() / detail.tempsTotalMillis.toFloat())
+                                            },
+                                            colors = pieChartColors,
+                                            modifier = Modifier.weight(0.5f)
                                         )
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
-                                detail.detailsParType.forEach { typeTemps ->
-                                    val pourcentage = if (detail.tempsTotalMillis > 0) (typeTemps.tempsTotalMillis.toDouble() / detail.tempsTotalMillis.toDouble() * 100) else 0.0
-                                    // Pour l'instant, cette liste n'est pas cliquable pour la navigation
-                                    InfoRow(
-                                        label = typeTemps.typeIntervention,
-                                        value = "${formatMillisToHoursMinutes(typeTemps.tempsTotalMillis)} (${String.format("%.1f", pourcentage)}%)"
-                                    )
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Column(modifier = Modifier.weight(0.5f)) {
+                                            detail.detailsParType.forEachIndexed { index, typeTemps ->
+                                                val pourcentage = (typeTemps.tempsTotalMillis.toDouble() / detail.tempsTotalMillis.toDouble() * 100)
+                                                LegendItem(
+                                                    color = pieChartColors.getOrElse(index) { Color.Gray },
+                                                    text = "${typeTemps.typeIntervention}: ${formatMillisToHoursMinutes(typeTemps.tempsTotalMillis)} (${String.format("%.1f", pourcentage)}%)"
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    detail.detailsParType.forEach { typeTemps ->
+                                        InfoRow(
+                                            label = typeTemps.typeIntervention,
+                                            value = formatMillisToHoursMinutes(typeTemps.tempsTotalMillis)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -292,20 +313,36 @@ fun SectionTitle(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.headlineSmall,
-        modifier = Modifier.padding(bottom = 8.dp, top = 16.dp) // Ajout d'un padding top
+        modifier = Modifier.padding(bottom = 8.dp, top = 16.dp)
     )
 }
 
 @Composable
 fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier // Le modificateur est appliqué ici, incluant le .clickable si fourni
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         Text(text = value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+fun LegendItem(color: Color, text: String, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.padding(vertical = 2.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(color, shape = MaterialTheme.shapes.small)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(text = text, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -338,7 +375,7 @@ fun BarChart(
     }
 
     val maxValue = data.values.maxOrNull() ?: 0f
-    if (maxValue == 0f && data.isNotEmpty()) { // Toutes les valeurs sont 0
+    if (maxValue == 0f && data.isNotEmpty()) {
         Text(
             "Toutes les valeurs sont nulles pour le graphique.",
             modifier = modifier.padding(vertical = 16.dp).fillMaxWidth(),
@@ -348,34 +385,38 @@ fun BarChart(
         return
     }
 
-
-    val barWidthPx = 50f // Réduit pour plus d'espace si beaucoup de barres
+    val barWidthPx = 50f
     val spaceBetweenBarsPx = 25f
     val chartHeightPx = 200f
-    val labelTextSizePx = 11.dp.value // Taille de texte pour les labels
+    val labelTextSizePx = 11.dp.value
 
     val paint = remember {
-        Paint().apply {
-            textAlign = Paint.Align.CENTER
+        AndroidPaint().apply {
+            textAlign = AndroidPaint.Align.CENTER
             textSize = labelTextSizePx
-            // La couleur sera définie par MaterialTheme pour le texte des labels
         }
     }
     val labelColor = MaterialTheme.colorScheme.onSurface
 
+    val scrollState = rememberScrollState()
+    val totalWidth = (data.size * (barWidthPx + spaceBetweenBarsPx) - spaceBetweenBarsPx).coerceAtLeast(0f)
 
-    Box(modifier = modifier.padding(top = 8.dp, bottom = 8.dp)) {
+    Box(
+        modifier = modifier
+            .padding(top = 8.dp, bottom = 8.dp)
+            .horizontalScroll(scrollState) // Ajout du défilement horizontal
+    ) {
         Canvas(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(chartHeightPx.dp + 50.dp) // Espace pour les libellés en bas et valeurs en haut
+                .width(with(LocalDensity.current) { totalWidth.toDp() }) // Largeur dynamique
+                .height(chartHeightPx.dp + 50.dp) // Espace pour les libellés et valeurs
         ) {
             val chartBottomY = chartHeightPx
             val maxBarHeight = chartHeightPx * 0.85f
 
             data.entries.forEachIndexed { index, entry ->
                 val barHeight = if (maxValue > 0) (entry.value / maxValue) * maxBarHeight else 0f
-                val barLeft = index * (barWidthPx + spaceBetweenBarsPx) + (spaceBetweenBarsPx/2) // Centrer un peu plus les barres
+                val barLeft = index * (barWidthPx + spaceBetweenBarsPx) + (spaceBetweenBarsPx / 2)
                 val barTop = chartBottomY - barHeight
 
                 drawRect(
@@ -383,22 +424,16 @@ fun BarChart(
                     topLeft = Offset(barLeft, barTop),
                     size = Size(barWidthPx, barHeight)
                 )
-
-                // Utiliser Text de Compose pour les labels pour une meilleure gestion du thème et du style
-                // Cette approche est plus complexe à intégrer directement dans Canvas pour le positionnement exact.
-                // Pour la simplicité, on garde drawText, mais on utilise la couleur du thème.
                 paint.color = labelColor.hashCode()
 
                 drawIntoCanvas { canvas ->
-                    // Libellé X (nom du chantier)
                     canvas.nativeCanvas.drawText(
                         entry.key.take(7) + if (entry.key.length > 7) ".." else "",
                         barLeft + barWidthPx / 2,
                         chartBottomY + 20.dp.toPx(),
                         paint
                     )
-                    // Valeur au-dessus de la barre
-                    if (entry.value > 0) { // N'affiche pas 0.0
+                    if (entry.value > 0) {
                         canvas.nativeCanvas.drawText(
                             String.format("%.1f%s", entry.value, label),
                             barLeft + barWidthPx / 2,
@@ -411,7 +446,7 @@ fun BarChart(
             drawLine(
                 color = axisColor,
                 start = Offset(0f, chartBottomY),
-                end = Offset(size.width, chartBottomY),
+                end = Offset(totalWidth, chartBottomY), // Ligne jusqu'à la fin du contenu scrollable
                 strokeWidth = 1.dp.toPx()
             )
         }
@@ -423,8 +458,8 @@ fun PieChart(
     data: Map<String, Float>, // Libellé -> Pourcentage (0.0 à 1.0)
     modifier: Modifier = Modifier,
     colors: List<Color>,
-    strokeWidthDp: Dp = 30.dp, // Largeur de l'anneau du donut en Dp
-    chartSizeDp: Dp = 150.dp // Taille du graphique en Dp
+    strokeWidthDp: Dp = 30.dp,
+    chartSizeDp: Dp = 150.dp
 ) {
     if (data.isEmpty()) {
         Text(
@@ -450,24 +485,27 @@ fun PieChart(
 
     Box(
         modifier = modifier
-            .padding(vertical = 8.dp) // Ajout de padding vertical
-            .size(chartSizeDp),
+            .size(chartSizeDp), // Le padding vertical est géré par le parent maintenant
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val outerRadius = size.minDimension / 2f
             val strokeWidthPx = strokeWidthDp.toPx()
 
+            if (strokeWidthPx >= outerRadius * 2) { // Évite un rayon intérieur négatif ou nul
+                return@Canvas // Ne rien dessiner si la largeur du trait est trop grande
+            }
+
             data.entries.forEachIndexed { index, entry ->
                 val proportion = entry.value / totalValue
                 val sweepAngle = 360f * proportion
                 val color = colors.getOrElse(index) { Color.LightGray }
 
-                if (sweepAngle > 0.1f) { // Ne pas dessiner des arcs minuscules
+                if (sweepAngle > 0.1f) {
                     drawArc(
                         color = color,
                         startAngle = startAngle,
-                        sweepAngle = sweepAngle - 1.0f, // Petit espace entre les segments
+                        sweepAngle = sweepAngle - 1.0f,
                         useCenter = false,
                         topLeft = Offset(strokeWidthPx / 2, strokeWidthPx / 2),
                         size = Size(size.width - strokeWidthPx, size.height - strokeWidthPx),
