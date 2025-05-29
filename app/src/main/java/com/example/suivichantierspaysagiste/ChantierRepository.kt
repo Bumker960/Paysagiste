@@ -32,7 +32,7 @@ class ChantierRepository(
         return chantierDao.getChantierByIdFlow(id)
     }
 
-    // --- Fonctions pour les Interventions (inchangées) ---
+    // --- Fonctions pour les Interventions (inchangées pour la plupart) ---
     fun getInterventionsForChantier(chantierId: Long): Flow<List<Intervention>> {
         return interventionDao.getInterventionsForChantier(chantierId)
     }
@@ -177,5 +177,31 @@ class ChantierRepository(
 
     suspend fun deleteDevisById(devisId: Long) {
         devisDao.deleteDevisById(devisId)
+    }
+
+    // --- NOUVELLES FONCTIONS POUR L'ANALYSE DU TEMPS ---
+
+    fun getInterventionsAvecDureeDansPeriode(dateDebut: Date, dateFin: Date): Flow<List<InterventionAvecDuree>> {
+        return interventionDao.getInterventionsAvecDureeDansPeriode(dateDebut, dateFin)
+    }
+
+    fun getAllInterventionsAvecDuree(): Flow<List<InterventionAvecDuree>> {
+        return interventionDao.getAllInterventionsAvecDuree()
+    }
+
+    fun getTempsTotalParChantierDansPeriode(dateDebut: Date, dateFin: Date): Flow<List<ChantierTempsTotal>> {
+        return interventionDao.getTempsTotalParChantierDansPeriode(dateDebut, dateFin)
+    }
+
+    fun getAllTempsTotalParChantier(): Flow<List<ChantierTempsTotal>> {
+        return interventionDao.getAllTempsTotalParChantier()
+    }
+
+    fun getTempsTotalParTypeInterventionDansPeriode(dateDebut: Date, dateFin: Date): Flow<List<TypeInterventionTempsTotal>> {
+        return interventionDao.getTempsTotalParTypeInterventionDansPeriode(dateDebut, dateFin)
+    }
+
+    fun getAllTempsTotalParTypeIntervention(): Flow<List<TypeInterventionTempsTotal>> {
+        return interventionDao.getAllTempsTotalParTypeIntervention()
     }
 }

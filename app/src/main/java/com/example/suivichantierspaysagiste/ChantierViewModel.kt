@@ -100,6 +100,13 @@ data class ResumeFacturationAccueil(
     val montantTotalEstimeAFacturer: Double
 )
 
+// --- Données spécifiques à la page d'analyse du temps ---
+data class AnalyseTempsChantierDetail(
+    val nomClient: String,
+    val tempsTotalMillis: Long,
+    val detailsParType: List<TypeInterventionTempsTotal>
+)
+
 
 enum class SortOrder {
     ASC,
@@ -592,6 +599,123 @@ class ChantierViewModel(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), ResumeFacturationAccueil(0, 0.0))
 
 
+    // --- NOUVEAUX StateFlows et logique pour la page d'Analyse du Temps ---
+    private val _selectedAnalysePeriode = MutableStateFlow(PeriodeSelection.MOIS_EN_COURS)
+    val selectedAnalysePeriode: StateFlow<PeriodeSelection> = _selectedAnalysePeriode.asStateFlow()
+
+    private val _analyseTempsChantierId = MutableStateFlow<Long?>(null) // Pour la vue détaillée d'un chantier
+    val analyseTempsChantierId: StateFlow<Long?> = _analyseTempsChantierId.asStateFlow()
+
+    // Flow pour les dates de début et de fin de la période sélectionnée
+    private val analyseDateRange: Flow<Pair<Date, Date>> = _selectedAnalysePeriode.map { periode ->
+        getDatesForPeriode(periode)
+    }.distinctUntilChanged()
+
+    // Fonction utilitaire pour obtenir les dates de début et de fin
+    private fun getDatesForPeriode(periode: PeriodeSelection): Pair<Date, Date> {
+        val calendar = Calendar.getInstance()
+        var startDate: Date
+        var endDate: Date
+
+        when (periode) {
+            PeriodeSelection.SEMAINE_EN_COURS -> {
+                calendar.firstDayOfWeek = Calendar.MONDAY
+                calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                calendar.set(Calendar.HOUR_OF_DAY, 0); calendar.set(Calendar.MINUTE, 0); calendar.set(Calendar.SECOND, 0); calendar.set(Calendar.MILLISECOND, 0)
+                startDate = calendar.time
+                calendar.add(Calendar.DAY_OF_WEEK, 6)
+                calendar.set(Calendar.HOUR_OF_DAY, 23); calendar.set(Calendar.MINUTE, 59); calendar.set(Calendar.SECOND, 59); calendar.set(Calendar.MILLISECOND, 999)
+                endDate = calendar.time
+            }
+            PeriodeSelection.MOIS_EN_COURS -> {
+                calendar.set(Calendar.DAY_OF_MONTH, 1)
+                calendar.set(Calendar.HOUR_OF_DAY, 0); calendar.set(Calendar.MINUTE, 0); calendar.set(Calendar.SECOND, 0); calendar.set(Calendar.MILLISECOND, 0)
+                startDate = calendar.time
+                calendar.add(Calendar.MONTH, 1)
+                calendar.add(Calendar.DAY_OF_MONTH, -1)
+                calendar.set(Calendar.HOUR_OF_DAY, 23); calendar.set(Calendar.MINUTE, 59); calendar.set(Calendar.SECOND, 59); calendar.set(Calendar.MILLISECOND, 999)
+                endDate = calendar.time
+            }
+            PeriodeSelection.ANNEE_EN_COURS -> {
+                calendar.set(Calendar.DAY_OF_YEAR, 1)
+                calendar.set(Calendar.HOUR_OF_DAY, 0); calendar.set(Calendar.MINUTE, 0); calendar.set(Calendar.SECOND, 0); calendar.set(Calendar.MILLISECOND, 0)
+                startDate = calendar.time
+                calendar.set(Calendar.MONTH, Calendar.DECEMBER)
+                calendar.set(Calendar.DAY_OF_MONTH, 31)
+                calendar.set(Calendar.HOUR_OF_DAY, 23); calendar.set(Calendar.MINUTE, 59); calendar.set(Calendar.SECOND, 59); calendar.set(Calendar.MILLISECOND, 999)
+                endDate = calendar.time
+            }
+            PeriodeSelection.TOUT -> {
+                // Dates très larges pour inclure tout
+                startDate = Date(0) // Début de l'époque Unix
+                endDate = Calendar.getInstance().apply { add(Calendar.YEAR, 100) }.time // Dans 100 ans
+            }
+        }
+        return Pair(startDate, endDate)
+    }
+
+    // Temps total sur tous les chantiers pour la période sélectionnée
+    val analyseTempsTotalGlobal: StateFlow<Long> = analyseDateRange.flatMapLatest { (debut, fin) ->
+        val flow = if (selectedAnalysePeriode.value == PeriodeSelection.TOUT) {
+            repository.getAllInterventionsAvecDuree()
+        } else {
+            repository.getInterventionsAvecDureeDansPeriode(debut, fin)
+        }
+        flow.map { interventions ->
+            interventions.sumOf { it.dureeEffective ?: 0L }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0L)
+
+    // Classement des chantiers les plus chronophages pour la période sélectionnée
+    val analyseChantiersPlusChronophages: StateFlow<List<ChantierTempsTotal>> =
+        analyseDateRange.flatMapLatest { (debut, fin) ->
+            val flow = if (selectedAnalysePeriode.value == PeriodeSelection.TOUT) {
+                repository.getAllTempsTotalParChantier()
+            } else {
+                repository.getTempsTotalParChantierDansPeriode(debut, fin)
+            }
+            flow.map { list -> list.sortedByDescending { it.tempsTotalMillis } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    // Répartition du temps par type d'intervention (global) pour la période sélectionnée
+    val analyseTempsParTypeInterventionGlobal: StateFlow<List<TypeInterventionTempsTotal>> =
+        analyseDateRange.flatMapLatest { (debut, fin) ->
+            val flow = if (selectedAnalysePeriode.value == PeriodeSelection.TOUT) {
+                repository.getAllTempsTotalParTypeIntervention()
+            } else {
+                repository.getTempsTotalParTypeInterventionDansPeriode(debut, fin)
+            }
+            flow
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+
+    // Détail du temps pour un chantier spécifique (pour la page d'analyse)
+    val analyseDetailTempsPourChantierSelectionne: StateFlow<AnalyseTempsChantierDetail?> =
+        combine(_analyseTempsChantierId, analyseDateRange, tousLesChantiers) { chantierId, (debut, fin), chantiersList ->
+            if (chantierId == null) return@combine null
+
+            val chantierInfo = chantiersList.find { it.id == chantierId } ?: return@combine null
+            val interventionsSource = if (selectedAnalysePeriode.value == PeriodeSelection.TOUT) {
+                repository.getAllInterventionsAvecDuree()
+            } else {
+                repository.getInterventionsAvecDureeDansPeriode(debut, fin)
+            }
+
+            interventionsSource.map { interventions ->
+                val interventionsPourCeChantier = interventions.filter { it.chantierId == chantierId }
+                val tempsTotal = interventionsPourCeChantier.sumOf { it.dureeEffective ?: 0L }
+                val detailsParType = interventionsPourCeChantier
+                    .groupBy { it.typeIntervention }
+                    .map { (type, listeInterventions) ->
+                        TypeInterventionTempsTotal(type, listeInterventions.sumOf { it.dureeEffective ?: 0L })
+                    }
+                    .sortedByDescending { it.tempsTotalMillis }
+                AnalyseTempsChantierDetail(chantierInfo.nomClient, tempsTotal, detailsParType)
+            }.first() // Collecte la première émission, car flatMapLatest pourrait être plus complexe ici
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
+
+
+
     fun demarrerInterventionChrono(chantierId: Long, typeIntervention: String, chantierNom: String) {
         if (interventionEnCoursUi.value != null) {
             Toast.makeText(applicationContext, "Un chronomètre est déjà en cours.", Toast.LENGTH_SHORT).show()
@@ -623,9 +747,12 @@ class ChantierViewModel(
 
     fun loadChantierById(chantierId: Long) {
         _selectedChantierId.value = chantierId
+        // Si on arrive sur le détail d'un chantier, on sélectionne aussi pour l'analyse de ce chantier
+        // _analyseTempsChantierId.value = chantierId // On verra si c'est pertinent de le faire ici
     }
     fun clearSelectedChantierId() {
         _selectedChantierId.value = null
+        _analyseTempsChantierId.value = null
     }
 
     fun setSelectedMapChantier(chantier: Chantier?) {
@@ -1154,6 +1281,19 @@ class ChantierViewModel(
             Log.e("ChantierViewModel", "Erreur lors de la visualisation du PDF", e)
             Toast.makeText(context, "Erreur lors de la tentative d'ouverture du PDF: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    // --- Fonctions pour la page d'Analyse du Temps ---
+    fun setPeriodeSelectionAnalyse(periode: PeriodeSelection) {
+        _selectedAnalysePeriode.value = periode
+        // Si on change la période globale, on désélectionne le chantier spécifique pour l'analyse détaillée
+        // pour éviter la confusion, car la période s'applique aux vues globales.
+        // L'utilisateur pourra re-sélectionner un chantier s'il veut voir son détail pour la nouvelle période globale.
+        // _analyseTempsChantierId.value = null // Ou laisser, à discuter
+    }
+
+    fun setAnalyseTempsChantierId(chantierId: Long?) {
+        _analyseTempsChantierId.value = chantierId
     }
 }
 

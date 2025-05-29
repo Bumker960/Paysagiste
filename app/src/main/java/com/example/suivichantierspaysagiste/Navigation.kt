@@ -1,13 +1,14 @@
 package com.example.suivichantierspaysagiste
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Analytics // Icône pour l'analyse
 import androidx.compose.material.icons.filled.EuroSymbol // Icône pour la facturation
 import androidx.compose.material.icons.filled.Home // NOUVELLE ICÔNE
 import androidx.compose.material.icons.filled.LocationOn
 
 // Objet pour centraliser les définitions de nos routes
 object ScreenDestinations {
-    const val ACCUEIL_ROUTE = "accueil" // NOUVELLE ROUTE
+    const val ACCUEIL_ROUTE = "accueil"
     const val CHANTIER_LIST_ROUTE = "chantier_list"
     const val CHANTIER_DETAIL_ROUTE_PREFIX = "chantier_detail"
     const val CHANTIER_ID_ARG = "chantierId"
@@ -19,5 +20,5 @@ object ScreenDestinations {
     const val SETTINGS_ROUTE = "settings"
     const val MAP_ROUTE = "map"
     const val FACTURATION_EXTRAS_ROUTE = "facturation_extras"
+    const val ANALYSE_TEMPS_ROUTE = "analyse_temps" // NOUVELLE ROUTE
 }
-

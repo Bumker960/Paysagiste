@@ -58,4 +58,97 @@ interface InterventionDao {
     // Pour l'instant, on se concentre sur une intervention en cours par type.
     // @Query("SELECT * FROM interventions WHERE chantierId = :chantierId AND statutIntervention = :statut LIMIT 1")
     // fun getAnyInterventionEnCoursForChantierFlow(chantierId: Long, statut: String = InterventionStatus.IN_PROGRESS.name): Flow<Intervention?>
+
+
+    // --- NOUVELLES REQUÊTES POUR L'ANALYSE DU TEMPS ---
+
+    /**
+     * Récupère toutes les interventions complétées (avec une durée effective) dans une plage de dates donnée.
+     * Utilisé pour les calculs globaux de temps.
+     */
+    @Query("""
+        SELECT id, chantierId, typeIntervention, heureDebut, dureeEffective 
+        FROM interventions 
+        WHERE statutIntervention = :statutTermine 
+        AND dureeEffective IS NOT NULL AND dureeEffective > 0
+        AND heureDebut BETWEEN :dateDebut AND :dateFin
+    """)
+    fun getInterventionsAvecDureeDansPeriode(dateDebut: Date, dateFin: Date, statutTermine: String = InterventionStatus.COMPLETED.name): Flow<List<InterventionAvecDuree>>
+
+    /**
+     * Récupère toutes les interventions complétées (avec une durée effective) sans filtre de date.
+     */
+    @Query("""
+        SELECT id, chantierId, typeIntervention, heureDebut, dureeEffective 
+        FROM interventions 
+        WHERE statutIntervention = :statutTermine 
+        AND dureeEffective IS NOT NULL AND dureeEffective > 0
+    """)
+    fun getAllInterventionsAvecDuree(statutTermine: String = InterventionStatus.COMPLETED.name): Flow<List<InterventionAvecDuree>>
+
+
+    /**
+     * Calcule le temps total passé par chantier pour les interventions complétées dans une plage de dates.
+     * Utilise une jointure avec la table des chantiers pour obtenir le nom du client.
+     */
+    @Query("""
+        SELECT 
+            i.chantierId, 
+            c.nomClient, 
+            SUM(i.dureeEffective) as tempsTotalMillis
+        FROM interventions i
+        INNER JOIN chantiers c ON i.chantierId = c.id
+        WHERE i.statutIntervention = :statutTermine 
+        AND i.dureeEffective IS NOT NULL AND i.dureeEffective > 0
+        AND i.heureDebut BETWEEN :dateDebut AND :dateFin
+        GROUP BY i.chantierId, c.nomClient
+    """)
+    fun getTempsTotalParChantierDansPeriode(dateDebut: Date, dateFin: Date, statutTermine: String = InterventionStatus.COMPLETED.name): Flow<List<ChantierTempsTotal>>
+
+    /**
+     * Calcule le temps total passé par chantier pour toutes les interventions complétées.
+     */
+    @Query("""
+        SELECT 
+            i.chantierId, 
+            c.nomClient, 
+            SUM(i.dureeEffective) as tempsTotalMillis
+        FROM interventions i
+        INNER JOIN chantiers c ON i.chantierId = c.id
+        WHERE i.statutIntervention = :statutTermine 
+        AND i.dureeEffective IS NOT NULL AND i.dureeEffective > 0
+        GROUP BY i.chantierId, c.nomClient
+    """)
+    fun getAllTempsTotalParChantier(statutTermine: String = InterventionStatus.COMPLETED.name): Flow<List<ChantierTempsTotal>>
+
+
+    /**
+     * Calcule le temps total passé par type d'intervention pour les interventions complétées dans une plage de dates.
+     */
+    @Query("""
+        SELECT 
+            typeIntervention, 
+            SUM(dureeEffective) as tempsTotalMillis
+        FROM interventions
+        WHERE statutIntervention = :statutTermine 
+        AND dureeEffective IS NOT NULL AND dureeEffective > 0
+        AND heureDebut BETWEEN :dateDebut AND :dateFin
+        GROUP BY typeIntervention
+    """)
+    fun getTempsTotalParTypeInterventionDansPeriode(dateDebut: Date, dateFin: Date, statutTermine: String = InterventionStatus.COMPLETED.name): Flow<List<TypeInterventionTempsTotal>>
+
+    /**
+     * Calcule le temps total passé par type d'intervention pour toutes les interventions complétées.
+     */
+    @Query("""
+        SELECT 
+            typeIntervention, 
+            SUM(dureeEffective) as tempsTotalMillis
+        FROM interventions
+        WHERE statutIntervention = :statutTermine 
+        AND dureeEffective IS NOT NULL AND dureeEffective > 0
+        GROUP BY typeIntervention
+    """)
+    fun getAllTempsTotalParTypeIntervention(statutTermine: String = InterventionStatus.COMPLETED.name): Flow<List<TypeInterventionTempsTotal>>
+
 }

@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.* // Conserve tous les imports existants
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +73,7 @@ sealed class DrawerNavItem(val route: String, val label: String, val icon: Image
     object TaillesPrio : DrawerNavItem(ScreenDestinations.TAILLES_PRIORITAIRES_ROUTE, "Tailles Prio.", Icons.Filled.ContentCut)
     object DesherbagesPrio : DrawerNavItem(ScreenDestinations.DESHERBAGES_PRIORITAIRES_ROUTE, "Désherbage Prio.", Icons.Filled.Spa)
     object FacturationExtras : DrawerNavItem(ScreenDestinations.FACTURATION_EXTRAS_ROUTE, "Facturation Extras", Icons.Filled.EuroSymbol)
+    object AnalyseTemps : DrawerNavItem(ScreenDestinations.ANALYSE_TEMPS_ROUTE, "Analyse Temps", Icons.Filled.Analytics) // NOUVEL ITEM
     object Reglages : DrawerNavItem(ScreenDestinations.SETTINGS_ROUTE, "Réglages", Icons.Filled.Settings)
 }
 
@@ -213,6 +214,7 @@ fun GetCurrentScreenTitle(route: String?, chantierViewModel: ChantierViewModel):
         route == ScreenDestinations.SETTINGS_ROUTE -> "Réglages"
         route == ScreenDestinations.MAP_ROUTE -> "Carte des Chantiers"
         route == ScreenDestinations.FACTURATION_EXTRAS_ROUTE -> "Facturation Extras"
+        route == ScreenDestinations.ANALYSE_TEMPS_ROUTE -> "Analyse du Temps Passé" // NOUVEAU TITRE
         else -> "SP"
     }
 }
@@ -238,10 +240,12 @@ fun AppNavigationWithDrawer(
         BottomNavItem.Carte
     )
 
+    // MISE À JOUR de la liste pour inclure le nouvel item
     val drawerNavItems = listOf(
         DrawerNavItem.TaillesPrio,
         DrawerNavItem.DesherbagesPrio,
         DrawerNavItem.FacturationExtras,
+        DrawerNavItem.AnalyseTemps, // AJOUTÉ ICI
         DrawerNavItem.Reglages
     )
 
@@ -408,6 +412,10 @@ fun AppNavigationWithDrawer(
                 }
                 composable(route = ScreenDestinations.FACTURATION_EXTRAS_ROUTE) {
                     FacturationExtrasScreen(viewModel = chantierViewModel, navController = navController)
+                }
+                // NOUVELLE ROUTE POUR L'ANALYSE DU TEMPS
+                composable(route = ScreenDestinations.ANALYSE_TEMPS_ROUTE) {
+                    AnalyseTempsScreen(viewModel = chantierViewModel, navController = navController)
                 }
             }
         }
