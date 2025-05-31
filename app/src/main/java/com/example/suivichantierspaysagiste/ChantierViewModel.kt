@@ -1263,13 +1263,16 @@ class ChantierViewModel(
         }
     }
 
-    /**
-     * Ouvre un devis PDF en utilisant une application externe via FileProvider.
-     */
     fun visualiserDevisPdf(devis: Devis, context: Context) {
+        // Outer try: covers file operations, URI generation
         try {
-            val dossierDevis = File(context.filesDir, DataBackupManager.DEVIS_FOLDER_NAME) // Utiliser la constante
+            val dossierDevis = File(context.filesDir, "dossier_devis")
             val fichierPdf = File(dossierDevis, devis.nomFichier)
+
+            Log.d("ChantierViewModel", "Vérification fichier PDF: ${fichierPdf.absolutePath}")
+            Log.d("ChantierViewModel", "Fichier PDF existe ? ${fichierPdf.exists()}")
+            Log.d("ChantierViewModel", "Fichier PDF lisible ? ${fichierPdf.canRead()}")
+            Log.d("ChantierViewModel", "Taille fichier PDF (octets): ${fichierPdf.length()}")
 
             if (!fichierPdf.exists()) {
                 Toast.makeText(context, "Fichier PDF non trouvé.", Toast.LENGTH_LONG).show()
@@ -1281,26 +1284,33 @@ class ChantierViewModel(
             val uri = FileProvider.getUriForFile(context, authority, fichierPdf)
             Log.d("ChantierViewModel", "Attempting to view PDF with URI: $uri, Authority: $authority")
 
-            val intent = Intent(Intent.ACTION_VIEW).apply {
+            // Variables non utilisées supprimées
+            // val intent = Intent(Intent.ACTION_VIEW).apply { ... }
+            // val genericIntent = Intent(Intent.ACTION_VIEW).apply { ... }
+
+            val pdfIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/pdf")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Ré-ajouté pour robustesse
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
-            // Vérifier si une activité peut gérer l'intent
-            if (intent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(intent)
-            } else {
-                Log.w("ChantierViewModel", "No activity found to handle PDF intent for URI: $uri")
+            // Inner try-catch: specifically for launching the activity
+            try {
+                val chooser = Intent.createChooser(pdfIntent, "Ouvrir le PDF avec...")
+                context.startActivity(chooser)
+            } catch (e: ActivityNotFoundException) {
+                Log.e("ChantierViewModel", "ActivityNotFoundException lors du lancement du chooser pour PDF", e)
                 Toast.makeText(context, "Aucune application trouvée pour ouvrir les PDF. Veuillez en installer une.", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) { // Catch for inner try (startActivity)
+                Log.e("ChantierViewModel", "Erreur lors du lancement du chooser pour PDF: ${e.message}", e)
+                Toast.makeText(context, "Erreur d'ouverture: ${e.message}", Toast.LENGTH_LONG).show() // Correction: { enlevée
             }
-        } catch (e: ActivityNotFoundException) { // Intercepter spécifiquement si aucune activité n'est trouvée
-            Log.e("ChantierViewModel", "ActivityNotFoundException: No application found to open PDF.", e)
-            Toast.makeText(context, "Aucune application trouvée pour ouvrir les PDF. Veuillez en installer une.", Toast.LENGTH_LONG).show()
-        }
-        catch (e: Exception) { // Intercepter d'autres exceptions potentielles
-            Log.e("ChantierViewModel", "Erreur lors de la visualisation du PDF", e)
-            Toast.makeText(context, "Erreur lors de la tentative d'ouverture du PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            // L'accolade fermante en trop qui était ici a été enlevée.
+            // Le bloc try externe se termine correctement après ce bloc catch interne.
+
+        } catch (e: Exception) { // Catch for the OUTER try block (file ops, URI gen, etc.)
+            Log.e("ChantierViewModel", "Erreur générale dans visualiserDevisPdf (hors lancement chooser): ${e.message}", e)
+            Toast.makeText(context, "Erreur lors de la préparation du PDF: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
