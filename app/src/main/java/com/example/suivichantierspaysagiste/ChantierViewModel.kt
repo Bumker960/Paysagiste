@@ -114,10 +114,21 @@ enum class SortOrder {
     NONE
 }
 
+// NOUVEAU: Enum pour l'état de l'export/import
+enum class BackupState {
+    IDLE,
+    IN_PROGRESS,
+    SUCCESS,
+    ERROR
+}
+
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChantierViewModel(
-    private val applicationContext: Application,
-    private val repository: ChantierRepository
+    private val applicationContext: Application, // Renommé pour plus de clarté
+    private val repository: ChantierRepository,
+    private val dataBackupManager: DataBackupManager, // NOUVEAU: Injection du DataBackupManager
+    private val appDatabase: AppDatabase // NOUVEAU: Injection de AppDatabase pour l'import
 ) : AndroidViewModel(applicationContext) {
 
     private val settingsDataStore = SettingsDataStore(applicationContext)
@@ -715,6 +726,16 @@ class ChantierViewModel(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
 
 
+    // NOUVEAU: StateFlows pour l'état de l'export/import
+    private val _exportState = MutableStateFlow(BackupState.IDLE)
+    val exportState: StateFlow<BackupState> = _exportState.asStateFlow()
+
+    private val _importState = MutableStateFlow(BackupState.IDLE)
+    val importState: StateFlow<BackupState> = _importState.asStateFlow()
+
+    private val _backupToastMessage = MutableSharedFlow<String>()
+    val backupToastMessage: SharedFlow<String> = _backupToastMessage.asSharedFlow()
+
 
     fun demarrerInterventionChrono(chantierId: Long, typeIntervention: String, chantierNom: String) {
         if (interventionEnCoursUi.value != null) {
@@ -1071,11 +1092,11 @@ class ChantierViewModel(
     ) {
         viewModelScope.launch {
             if (chantierId == null && referenceChantierTexteLibre.isNullOrBlank()) {
-                Toast.makeText(applicationContext, "Veuillez sélectionner un chantier ou saisir une référence.", Toast.LENGTH_LONG).show()
+                _backupToastMessage.emit("Veuillez sélectionner un chantier ou saisir une référence.")
                 return@launch
             }
             if (description.isBlank()) {
-                Toast.makeText(applicationContext, "La description est requise.", Toast.LENGTH_LONG).show()
+                _backupToastMessage.emit("La description est requise.")
                 return@launch
             }
 
@@ -1089,22 +1110,22 @@ class ChantierViewModel(
                 notes = notes?.ifBlank { null }
             )
             repository.insertPrestationHorsContrat(prestation)
-            Toast.makeText(applicationContext, "Prestation extra ajoutée.", Toast.LENGTH_SHORT).show()
+            _backupToastMessage.emit("Prestation extra ajoutée.")
         }
     }
 
     fun updatePrestationExtra(prestation: PrestationHorsContrat) {
         viewModelScope.launch {
             if (prestation.chantierId == null && prestation.referenceChantierTexteLibre.isNullOrBlank()) {
-                Toast.makeText(applicationContext, "Veuillez sélectionner un chantier ou saisir une référence.", Toast.LENGTH_LONG).show()
+                _backupToastMessage.emit("Veuillez sélectionner un chantier ou saisir une référence.")
                 return@launch
             }
             if (prestation.description.isBlank()) {
-                Toast.makeText(applicationContext, "La description est requise.", Toast.LENGTH_LONG).show()
+                _backupToastMessage.emit("La description est requise.")
                 return@launch
             }
             repository.updatePrestationHorsContrat(prestation)
-            Toast.makeText(applicationContext, "Prestation extra mise à jour.", Toast.LENGTH_SHORT).show()
+            _backupToastMessage.emit("Prestation extra mise à jour.")
         }
     }
 
@@ -1115,7 +1136,7 @@ class ChantierViewModel(
     fun deletePrestationExtra(prestation: PrestationHorsContrat) {
         viewModelScope.launch {
             repository.deletePrestationHorsContrat(prestation)
-            Toast.makeText(applicationContext, "Prestation extra supprimée.", Toast.LENGTH_SHORT).show()
+            _backupToastMessage.emit("Prestation extra supprimée.")
         }
     }
 
@@ -1125,7 +1146,7 @@ class ChantierViewModel(
             prestation?.let {
                 val updatedPrestation = it.copy(statut = StatutFacturationExtras.FACTUREE.name)
                 repository.updatePrestationHorsContrat(updatedPrestation)
-                Toast.makeText(applicationContext, "Prestation marquée comme facturée.", Toast.LENGTH_SHORT).show()
+                _backupToastMessage.emit("Prestation marquée comme facturée.")
             }
         }
     }
@@ -1136,7 +1157,7 @@ class ChantierViewModel(
             prestation?.let {
                 val updatedPrestation = it.copy(statut = StatutFacturationExtras.A_FACTURER.name)
                 repository.updatePrestationHorsContrat(updatedPrestation)
-                Toast.makeText(applicationContext, "Prestation remise à facturer.", Toast.LENGTH_SHORT).show()
+                _backupToastMessage.emit("Prestation remise à facturer.")
             }
         }
     }
@@ -1172,7 +1193,7 @@ class ChantierViewModel(
                 val nomFichierInterne = "devis_chantier${chantierId}_${System.currentTimeMillis()}.$extension"
 
                 // 3. Créer le répertoire de destination s'il n'existe pas
-                val dossierDevis = File(context.filesDir, "dossier_devis")
+                val dossierDevis = File(context.filesDir, DataBackupManager.DEVIS_FOLDER_NAME) // Utiliser la constante
                 if (!dossierDevis.exists()) {
                     dossierDevis.mkdirs()
                 }
@@ -1196,13 +1217,13 @@ class ChantierViewModel(
                 repository.insertDevis(nouveauDevis)
 
                 launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Devis '${nomOriginal}' ajouté avec succès.", Toast.LENGTH_LONG).show()
+                    _backupToastMessage.emit("Devis '${nomOriginal}' ajouté avec succès.")
                 }
 
             } catch (e: Exception) {
                 Log.e("ChantierViewModel", "Erreur lors de l'ajout du devis PDF", e)
                 launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Erreur lors de l'ajout du devis: ${e.message}", Toast.LENGTH_LONG).show()
+                    _backupToastMessage.emit("Erreur lors de l'ajout du devis: ${e.message}")
                 }
             }
         }
@@ -1215,7 +1236,7 @@ class ChantierViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // 1. Supprimer le fichier du stockage interne
-                val dossierDevis = File(context.filesDir, "dossier_devis")
+                val dossierDevis = File(context.filesDir, DataBackupManager.DEVIS_FOLDER_NAME) // Utiliser la constante
                 val fichierASupprimer = File(dossierDevis, devis.nomFichier)
                 if (fichierASupprimer.exists()) {
                     if (!fichierASupprimer.delete()) {
@@ -1230,13 +1251,13 @@ class ChantierViewModel(
                 repository.deleteDevis(devis)
 
                 launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Devis '${devis.nomOriginal ?: devis.nomFichier}' supprimé.", Toast.LENGTH_LONG).show()
+                    _backupToastMessage.emit("Devis '${devis.nomOriginal ?: devis.nomFichier}' supprimé.")
                 }
 
             } catch (e: Exception) {
                 Log.e("ChantierViewModel", "Erreur lors de la suppression du devis", e)
                 launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Erreur lors de la suppression du devis: ${e.message}", Toast.LENGTH_LONG).show()
+                    _backupToastMessage.emit("Erreur lors de la suppression du devis: ${e.message}")
                 }
             }
         }
@@ -1247,7 +1268,7 @@ class ChantierViewModel(
      */
     fun visualiserDevisPdf(devis: Devis, context: Context) {
         try {
-            val dossierDevis = File(context.filesDir, "dossier_devis")
+            val dossierDevis = File(context.filesDir, DataBackupManager.DEVIS_FOLDER_NAME) // Utiliser la constante
             val fichierPdf = File(dossierDevis, devis.nomFichier)
 
             if (!fichierPdf.exists()) {
@@ -1295,16 +1316,54 @@ class ChantierViewModel(
     fun setAnalyseTempsChantierId(chantierId: Long?) {
         _analyseTempsChantierId.value = chantierId
     }
+
+    // --- NOUVELLES FONCTIONS POUR L'EXPORT/IMPORT ---
+    fun exportData(uri: Uri) {
+        viewModelScope.launch {
+            _exportState.value = BackupState.IN_PROGRESS
+            val success = dataBackupManager.exportData(uri)
+            if (success) {
+                _exportState.value = BackupState.SUCCESS
+                _backupToastMessage.emit("Données exportées avec succès.")
+            } else {
+                _exportState.value = BackupState.ERROR
+                _backupToastMessage.emit("Erreur lors de l'exportation des données.")
+            }
+        }
+    }
+
+    fun importData(uri: Uri) {
+        viewModelScope.launch {
+            _importState.value = BackupState.IN_PROGRESS
+            val success = dataBackupManager.importData(uri, appDatabase) // Passer l'instance AppDatabase
+            if (success) {
+                _importState.value = BackupState.SUCCESS
+                _backupToastMessage.emit("Données importées avec succès. Veuillez redémarrer l'application.")
+                // Idéalement, ici, on notifierait l'UI de redémarrer l'application.
+            } else {
+                _importState.value = BackupState.ERROR
+                _backupToastMessage.emit("Erreur lors de l'importation des données.")
+            }
+        }
+    }
+
+    fun resetBackupStates() {
+        _exportState.value = BackupState.IDLE
+        _importState.value = BackupState.IDLE
+    }
+
 }
 
 class ChantierViewModelFactory(
     private val application: Application,
-    private val repository: ChantierRepository
+    private val repository: ChantierRepository,
+    private val dataBackupManager: DataBackupManager, // NOUVEAU
+    private val appDatabase: AppDatabase // NOUVEAU
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChantierViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return ChantierViewModel(application, repository) as T
+            return ChantierViewModel(application, repository, dataBackupManager, appDatabase) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class for ChantierViewModel")
     }
