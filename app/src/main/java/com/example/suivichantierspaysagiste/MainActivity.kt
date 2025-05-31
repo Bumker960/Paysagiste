@@ -122,11 +122,9 @@ private val LightColorScheme = lightColorScheme(
 
 class MainActivity : ComponentActivity() {
 
+    // MODIFIÉ: Utilisation de la factory de MonApplicationChantiers
     private val chantierViewModel: ChantierViewModel by viewModels {
-        ChantierViewModelFactory(
-            application,
-            (application as MonApplicationChantiers).chantierRepository
-        )
+        (application as MonApplicationChantiers).chantierViewModelFactory
     }
 
     private val settingsViewModel: SettingsViewModel by viewModels {
@@ -149,6 +147,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 // La permission est déjà accordée
             } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                // Expliquer pourquoi la permission est nécessaire, puis la demander.
+                // Pour cet exemple, nous la demandons directement.
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
                 colorScheme = colors
             ) {
                 AppNavigationWithDrawer(
-                    chantierViewModel = chantierViewModel,
+                    chantierViewModel = chantierViewModel, // Passation du ViewModel initialisé par la factory
                     settingsViewModel = settingsViewModel
                 )
             }
@@ -188,8 +188,8 @@ class MainActivity : ComponentActivity() {
             val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(ChronomailleurService.NOTIFICATION_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
-                setSound(null, null)
-                enableVibration(false)
+                setSound(null, null) // Pas de son pour cette notification de service
+                enableVibration(false) // Pas de vibration
             }
             val notificationManager: NotificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -215,7 +215,7 @@ fun GetCurrentScreenTitle(route: String?, chantierViewModel: ChantierViewModel):
         route == ScreenDestinations.MAP_ROUTE -> "Carte des Chantiers"
         route == ScreenDestinations.FACTURATION_EXTRAS_ROUTE -> "Facturation Extras"
         route == ScreenDestinations.ANALYSE_TEMPS_ROUTE -> "Analyse du Temps Passé" // NOUVEAU TITRE
-        else -> "SP"
+        else -> "SP" // Nom de l'application par défaut
     }
 }
 
@@ -230,7 +230,7 @@ fun AppNavigationWithDrawer(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val configuration = LocalConfiguration.current
-    val drawerWidth = configuration.screenWidthDp.dp * 0.75f
+    val drawerWidth = configuration.screenWidthDp.dp * 0.75f // Ajuster la largeur du drawer
 
 
     val bottomNavItems = listOf(
@@ -251,7 +251,7 @@ fun AppNavigationWithDrawer(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen,
+        gesturesEnabled = drawerState.isOpen, // Permettre les gestes seulement si le drawer est ouvert
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(drawerWidth)
@@ -285,7 +285,7 @@ fun AppNavigationWithDrawer(
                         },
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                         colors = NavigationDrawerItemDefaults.colors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), // Couleur pour l'élément sélectionné
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary
                         )
@@ -317,7 +317,7 @@ fun AppNavigationWithDrawer(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer, // Utilise la couleur du thème
                         titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
@@ -325,7 +325,7 @@ fun AppNavigationWithDrawer(
             },
             bottomBar = {
                 NavigationBar(
-                    containerColor = ModernColors.barBackground
+                    containerColor = ModernColors.barBackground // Conserve la couleur personnalisée pour la barre inférieure
                 ) {
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentDestination = navBackStackEntry?.destination
@@ -333,6 +333,7 @@ fun AppNavigationWithDrawer(
                     bottomNavItems.forEach { screen ->
                         val isSelected = currentDestination?.hierarchy?.any { hir ->
                             hir.route == screen.route ||
+                                    // Gérer la sélection pour l'écran de détail du chantier comme faisant partie de la liste des chantiers
                                     (screen.route == ScreenDestinations.CHANTIER_LIST_ROUTE && hir.route?.startsWith(ScreenDestinations.CHANTIER_DETAIL_ROUTE_PREFIX) == true)
                         } == true
 
@@ -350,6 +351,9 @@ fun AppNavigationWithDrawer(
                                     // restoreState = true // Temporairement retiré pour diagnostic
                                 }
 
+                                // Si on navigue vers la liste des chantiers ou l'accueil,
+                                // on s'assure de désélectionner un chantier potentiellement sélectionné
+                                // pour éviter des états incohérents dans le ViewModel.
                                 if (targetRoute == ScreenDestinations.CHANTIER_LIST_ROUTE || targetRoute == ScreenDestinations.ACCUEIL_ROUTE) {
                                     chantierViewModel.clearSelectedChantierId()
                                 }
@@ -359,7 +363,7 @@ fun AppNavigationWithDrawer(
                                 selectedTextColor = ModernColors.selectedContent,
                                 unselectedIconColor = ModernColors.unselectedContent,
                                 unselectedTextColor = ModernColors.unselectedContent,
-                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) // Couleur de l'indicateur de sélection
                             )
                         )
                     }
@@ -389,6 +393,7 @@ fun AppNavigationWithDrawer(
                             navController = navController
                         )
                     } else {
+                        // Gérer le cas où l'ID est null, peut-être afficher un message d'erreur ou rediriger
                         Text("Erreur: Chantier ID manquant")
                     }
                 }
@@ -404,6 +409,7 @@ fun AppNavigationWithDrawer(
                 composable(route = ScreenDestinations.SETTINGS_ROUTE) {
                     SettingsScreen(
                         settingsViewModel = settingsViewModel,
+                        chantierViewModel = chantierViewModel, // Passer ChantierViewModel à SettingsScreen
                         navController = navController
                     )
                 }

@@ -1,47 +1,106 @@
 package com.example.suivichantierspaysagiste
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CloudUpload // Pour Importer
+import androidx.compose.material.icons.filled.Save // Pour Exporter
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     settingsViewModel: SettingsViewModel,
-    navController: NavHostController // Peut être utilisé si des navigations sont nécessaires depuis cet écran
+    chantierViewModel: ChantierViewModel, // Paramètre ajouté
+    navController: NavHostController
 ) {
-    val isDarkMode by settingsViewModel.isDarkModeEnabled.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
+    // États pour les dialogues et les opérations de sauvegarde/restauration
+    val exportState by chantierViewModel.exportState.collectAsStateWithLifecycle()
+    val importState by chantierViewModel.importState.collectAsStateWithLifecycle()
+    var showConfirmExportDialog by remember { mutableStateOf(false) }
+    var showConfirmImportDialog by remember { mutableStateOf(false) }
+    var importFileUri by remember { mutableStateOf<Uri?>(null) }
+
+
+    // Récupération des valeurs des seuils et du mode sombre
+    val isDarkMode by settingsViewModel.isDarkModeEnabled.collectAsStateWithLifecycle()
     val tonteSeuilVert by settingsViewModel.tonteSeuilVert.collectAsStateWithLifecycle()
     val tonteSeuilOrange by settingsViewModel.tonteSeuilOrange.collectAsStateWithLifecycle()
     val tailleSeuil1Vert by settingsViewModel.tailleSeuil1Vert.collectAsStateWithLifecycle()
     val tailleSeuil2Orange by settingsViewModel.tailleSeuil2Orange.collectAsStateWithLifecycle()
     val desherbageSeuilOrangeJoursAvant by settingsViewModel.desherbageSeuilOrangeJoursAvant.collectAsStateWithLifecycle()
 
-
     var showTontesDialog by remember { mutableStateOf(false) }
     var showTaillesDialog by remember { mutableStateOf(false) }
     var showDesherbageDialog by remember { mutableStateOf(false) }
 
-    // Le Scaffold et la TopAppBar sont gérés dans MainActivity.
+    // Lanceurs pour la sélection/création de fichiers
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip"),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                chantierViewModel.exportData(it)
+            }
+        }
+    )
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                importFileUri = it // Stocker l'URI pour confirmation
+                showConfirmImportDialog = true
+            }
+        }
+    )
+
+    // Observer les messages Toast du ViewModel
+    LaunchedEffect(Unit) {
+        chantierViewModel.backupToastMessage.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            if (message.contains("Veuillez redémarrer l'application")) {
+                // Forcer la fermeture de l'application pour que l'utilisateur la redémarre manuellement.
+                // C'est une approche simple. Une solution plus élégante pourrait impliquer de
+                // naviguer vers un écran de "redémarrage requis" ou de tenter un redémarrage programmatique (complexe).
+                (context as? Activity)?.finishAffinity()
+            }
+        }
+    }
+
+
     Column(
         modifier = Modifier
-            // .padding(innerPadding) // innerPadding vient du Scaffold principal
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()) // Ajout du scroll si le contenu dépasse
+            .verticalScroll(rememberScrollState())
     ) {
-        // Section Mode Sombre
+        // Section Mode Sombre (existante)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -66,33 +125,60 @@ fun SettingsScreen(
         Text("Seuils d'Urgence", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Ligne pour les seuils de Tontes
+        // Lignes pour les seuils (existantes)
         SettingSummaryRow(
             title = "Seuils pour Tontes",
             summary = "OK < ${tonteSeuilVert}j, Attention < ${tonteSeuilOrange}j",
             onClick = { showTontesDialog = true }
         )
         Divider()
-
-        // Ligne pour les seuils de Tailles
         SettingSummaryRow(
             title = "Seuils pour Tailles (si 1/2 faite)",
             summary = "OK < ${tailleSeuil1Vert}j, Attention < ${tailleSeuil2Orange}j",
             onClick = { showTaillesDialog = true }
         )
         Divider()
-
-        // NOUVEAU: Ligne pour les seuils de Désherbage
         SettingSummaryRow(
             title = "Seuil pour Désherbage Planifié",
             summary = "Attention < ${desherbageSeuilOrangeJoursAvant} jours avant échéance",
             onClick = { showDesherbageDialog = true }
         )
         Divider()
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Gestion des Données", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Bouton Exporter les données
+        Button(
+            onClick = { showConfirmExportDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = exportState != BackupState.IN_PROGRESS && importState != BackupState.IN_PROGRESS
+        ) {
+            Icon(Icons.Filled.Save, contentDescription = "Exporter", modifier = Modifier.padding(end = 8.dp))
+            Text("Exporter les données")
+        }
+        if (exportState == BackupState.IN_PROGRESS) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Bouton Importer les données
+        Button(
+            onClick = { importLauncher.launch(arrayOf("application/zip")) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = exportState != BackupState.IN_PROGRESS && importState != BackupState.IN_PROGRESS
+        ) {
+            Icon(Icons.Filled.CloudUpload, contentDescription = "Importer", modifier = Modifier.padding(end = 8.dp))
+            Text("Importer les données")
+        }
+        if (importState == BackupState.IN_PROGRESS) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+        }
     }
 
-
-    // Dialogue pour les seuils de Tontes
+    // Dialogues pour les seuils (existants)
     if (showTontesDialog) {
         UrgencyThresholdsDialog(
             title = "Modifier Seuils Tontes",
@@ -108,8 +194,6 @@ fun SettingsScreen(
             onDismissRequest = { showTontesDialog = false }
         )
     }
-
-    // Dialogue pour les seuils de Tailles
     if (showTaillesDialog) {
         UrgencyThresholdsDialog(
             title = "Modifier Seuils Tailles (si 1/2 faite)",
@@ -125,8 +209,6 @@ fun SettingsScreen(
             onDismissRequest = { showTaillesDialog = false }
         )
     }
-
-    // NOUVEAU: Dialogue pour le seuil de Désherbage
     if (showDesherbageDialog) {
         SingleUrgencyThresholdDialog(
             title = "Modifier Seuil Désherbage",
@@ -139,7 +221,65 @@ fun SettingsScreen(
             onDismissRequest = { showDesherbageDialog = false }
         )
     }
+
+    // NOUVEAU: Dialogue de confirmation pour l'exportation
+    if (showConfirmExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmExportDialog = false },
+            title = { Text("Confirmer l'exportation") },
+            text = { Text("Voulez-vous exporter toutes les données de l'application ? Un fichier ZIP sera créé.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showConfirmExportDialog = false
+                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                        exportLauncher.launch("Sauvegarde_Paysagiste_$timestamp.zip")
+                    }
+                ) { Text("Exporter") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmExportDialog = false }) { Text("Annuler") }
+            }
+        )
+    }
+
+    // NOUVEAU: Dialogue de confirmation pour l'importation
+    if (showConfirmImportDialog && importFileUri != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showConfirmImportDialog = false
+                importFileUri = null
+                chantierViewModel.resetBackupStates()
+            },
+            title = { Text("Confirmer l'importation") },
+            text = { Text("ATTENTION : L'importation écrasera toutes les données actuelles de l'application. Cette action est irréversible. Voulez-vous continuer ?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showConfirmImportDialog = false
+                        importFileUri?.let { chantierViewModel.importData(it) }
+                        importFileUri = null // Réinitialiser après usage
+                    }
+                ) { Text("Importer et Écraser") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showConfirmImportDialog = false
+                    importFileUri = null
+                    chantierViewModel.resetBackupStates()
+                }) { Text("Annuler") }
+            }
+        )
+    }
 }
+
+// SettingSummaryRow et les Dialogues de seuil restent inchangés par rapport à votre version précédente
+// de SettingsScreen.kt, donc je ne les répète pas ici pour la concision.
+// Assurez-vous qu'ils sont présents dans votre fichier final.
+
+// Rappel: SettingSummaryRow, UrgencyThresholdsDialog, SingleUrgencyThresholdDialog
+// et ThresholdSettingItem doivent être présents dans ce fichier ou importés.
+// Je les remets ici pour que le fichier soit complet.
 
 @Composable
 fun SettingSummaryRow(
@@ -251,7 +391,6 @@ fun UrgencyThresholdsDialog( // Pour Tontes et Tailles (deux valeurs)
     )
 }
 
-// NOUVEAU Composable pour un dialogue avec une seule valeur de seuil (pour Désherbage)
 @Composable
 fun SingleUrgencyThresholdDialog(
     title: String,
