@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit
 import android.graphics.Paint as AndroidPaint // Alias pour éviter confusion si Paint de Compose est utilisé
 import androidx.compose.foundation.background // Importation ajoutée
 import androidx.compose.foundation.gestures.detectTapGestures // Importation AJOUTÉE
+import kotlin.math.max
 
 
 // Helper pour formater la durée en heures et minutes
@@ -48,8 +49,8 @@ fun formatMillisToHoursMinutes(millis: Long): String {
 // Data class pour les informations du tooltip
 data class TooltipInfo(
     val text: String,
-    val offset: Offset,
-    val barRect: Rect // Pour positionner le tooltip par rapport à la barre
+    val offset: Offset, // Coordonnée du clic sur le canvas, peut être utile pour d'autres logiques
+    val barRect: Rect // Rectangle de la barre cliquée, peut être utile pour d'autres logiques
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -345,17 +346,14 @@ private fun ChantierAnalysisLoadingView() {
 }
 
 
-// Nouveau Composable pour le Tooltip
 @Composable
 private fun ChartTooltip(tooltipInfo: TooltipInfo, onDismissRequest: () -> Unit) {
-    val popupPosition = IntOffset(
-        x = tooltipInfo.barRect.left.toInt() + (tooltipInfo.barRect.width / 2).toInt() - 50,
-        y = tooltipInfo.barRect.top.toInt() - 80
-    )
+    val density = LocalDensity.current
+    val yOffsetPx = with(density) { (-200).dp.roundToPx() }
 
     Popup(
-        alignment = Alignment.TopStart,
-        offset = popupPosition,
+        alignment = Alignment.BottomCenter,
+        offset = IntOffset(0, yOffsetPx),
         onDismissRequest = onDismissRequest
     ) {
         Surface(
@@ -454,11 +452,15 @@ fun BarChart(
         return
     }
 
-    val barWidthPx = 90f
+    val barWidthPx = 90f // Largeur visuelle de la barre
     val spaceBetweenBarsPx = 50f
     val chartHeightPx = 200f
     val density = LocalDensity.current
     val valueTextSizePx = with(density) { 18.sp.toPx() }
+
+    // Dimensions pour la zone cliquable
+    val minClickableHeightPx = with(density) { 48.dp.toPx() } // Hauteur tactile minimale
+    val clickableHorizontalPaddingPx = with(density) { 8.dp.toPx() } // Espace tactile supplémentaire sur les côtés
 
     val valuePaint = remember {
         AndroidPaint().apply {
@@ -486,42 +488,64 @@ fun BarChart(
                 .height(chartHeightPx.dp + 40.dp)
                 .pointerInput(data) {
                     detectTapGestures { tapOffset ->
-                        barRects.find { (rect, _) -> rect.contains(tapOffset) }?.let { (barRect, barLabel) ->
-                            onBarClick(barLabel, tapOffset, barRect)
+                        // Itérer en ordre inverse pour que les barres potentiellement superposées
+                        // (si padding important) soient gérées correctement (la plus en avant)
+                        barRects.asReversed().find { (rect, _) -> rect.contains(tapOffset) }?.let { (barRect, barLabel) ->
+                            onBarClick(barLabel, tapOffset, barRect) // barRect ici est le rectangle cliquable
                         }
                     }
                 }
         ) {
             barRects.clear()
             val chartBottomY = chartHeightPx
-            val maxBarHeight = chartHeightPx * 0.85f
+            val maxBarHeight = chartHeightPx * 0.85f // Hauteur max pour la partie visuelle de la barre
 
             data.entries.forEachIndexed { index, entry ->
-                val barHeight = if (maxValue > 0) (entry.value / maxValue) * maxBarHeight else 0f
-                val barLeft = index * (barWidthPx + spaceBetweenBarsPx) + (spaceBetweenBarsPx / 2)
-                val barTop = chartBottomY - barHeight
-                val currentBarRect = Rect(barLeft, barTop, barLeft + barWidthPx, chartBottomY)
+                // Calculs pour la barre VISUELLE
+                val visualBarHeight = if (maxValue > 0) (entry.value / maxValue) * maxBarHeight else 0f
+                val visualBarLeft = index * (barWidthPx + spaceBetweenBarsPx) + (spaceBetweenBarsPx / 2)
+                val visualBarTop = chartBottomY - visualBarHeight
 
+                // Calculs pour le RECTANGLE CLIQUABLE
+                // La hauteur effective pour le clic est le maximum entre la hauteur visuelle et la hauteur minimale cliquable.
+                val effectiveClickableHeight = max(visualBarHeight, minClickableHeightPx)
+                // Le haut du rectangle cliquable, s'assurant qu'il s'étend depuis chartBottomY vers le haut.
+                val clickableRectTop = chartBottomY - effectiveClickableHeight
+
+                // Définir le rectangle cliquable avec le padding horizontal.
+                val clickableRectLeftWithPadding = visualBarLeft - clickableHorizontalPaddingPx
+                val clickableRectWidthWithPadding = barWidthPx + (2 * clickableHorizontalPaddingPx)
+
+                val currentClickableBarRect = Rect(
+                    left = clickableRectLeftWithPadding,
+                    top = clickableRectTop,
+                    right = clickableRectLeftWithPadding + clickableRectWidthWithPadding,
+                    bottom = chartBottomY // Ancré à la ligne de base du graphique
+                )
+                barRects.add(Pair(currentClickableBarRect, entry.key))
+
+
+                // Dessin de la barre VISUELLE (utilise les dimensions visuelles)
                 drawRect(
                     color = barColor,
-                    topLeft = Offset(barLeft, barTop),
-                    size = Size(barWidthPx, barHeight)
+                    topLeft = Offset(visualBarLeft, visualBarTop),
+                    size = Size(barWidthPx, visualBarHeight) // Utilise la largeur et hauteur visuelles
                 )
-                barRects.add(Pair(currentBarRect, entry.key))
 
+                // Dessin du texte de la valeur (comme avant)
                 valuePaint.color = labelColor.hashCode()
-
                 if (entry.value > 0) {
                     drawIntoCanvas { canvas ->
                         canvas.nativeCanvas.drawText(
                             String.format("%.1f%s", entry.value, label),
-                            barLeft + barWidthPx / 2,
-                            barTop - 15.dp.toPx(),
+                            visualBarLeft + barWidthPx / 2, // Centré sur la barre visuelle
+                            visualBarTop - 15.dp.toPx(),    // Au-dessus de la barre visuelle
                             valuePaint
                         )
                     }
                 }
             }
+            // Dessin de l'axe X (comme avant)
             drawLine(
                 color = axisColor,
                 start = Offset(0f, chartBottomY),
